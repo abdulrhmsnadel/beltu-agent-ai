@@ -1,0 +1,14 @@
+{
+  "name": "BELTU",
+  "version": "1.1.0",
+  "local_ai": "FreeToken",
+  "features": [
+    "local_llm",
+    "gpu_vram_governor",
+    "simplified_cli",
+    "mobile_command_center",
+    "report_downloads"
+  ],
+  "tests": "115 passed",
+  "doctor": "9/9 passed"
+}

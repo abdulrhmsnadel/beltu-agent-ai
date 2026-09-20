@@ -1,0 +1,13 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
+import '../state/app_state.dart';
+
+class FilesScreen extends StatefulWidget { const FilesScreen({super.key}); @override State<FilesScreen> createState()=>_FilesScreenState(); }
+class _FilesScreenState extends State<FilesScreen>{ final scan=TextEditingController(); String path=''; List<dynamic> items=[];
+  Future<void> load() async { final id=int.tryParse(scan.text.trim()); if(id==null)return; try{ final x=await context.read<BeltuAppState>().api.files(id,path); if(mounted)setState(()=>items=x);}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('$e')));} }
+  Future<void> openItem(Map<String,dynamic> item) async { final id=int.tryParse(scan.text.trim()); if(id==null)return; if(item['type']=='directory'){setState(()=>path=item['path']); await load(); return;} if('${item['name']}'.endsWith('.md')||'${item['name']}'.endsWith('.json')||'${item['name']}'.endsWith('.txt')){ final text=await context.read<BeltuAppState>().api.readTextFile(id,item['path']); if(!mounted)return; showDialog(context:context,builder:(_)=>AlertDialog(title:Text(item['name']),content:SizedBox(width:700,height:500,child:SingleChildScrollView(child:SelectableText(text))),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Close'))])); } else { final bytes=await context.read<BeltuAppState>().api.downloadFile(id,item['path']); final dir=await getApplicationDocumentsDirectory(); final file=File('${dir.path}/${item['name']}'); await file.writeAsBytes(bytes,flush:true); if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('Saved ${file.path}'))); } }
+  @override void dispose(){scan.dispose();super.dispose();}
+  @override Widget build(BuildContext context)=>Column(children:[Padding(padding:const EdgeInsets.all(12),child:Row(children:[Expanded(child:TextField(controller:scan,keyboardType:TextInputType.number,decoration:const InputDecoration(labelText:'Scan ID'))),IconButton(onPressed:load,icon:const Icon(Icons.refresh)),if(path.isNotEmpty)IconButton(onPressed:(){setState(()=>path='');load();},icon:const Icon(Icons.home))])),if(path.isNotEmpty)Padding(padding:const EdgeInsets.symmetric(horizontal:12),child:Align(alignment:Alignment.centerLeft,child:Text(path))),Expanded(child:ListView(children:items.map((e){final x=e as Map<String,dynamic>;return ListTile(leading:Icon(x['type']=='directory'?Icons.folder:Icons.insert_drive_file),title:Text('${x['name']}'),subtitle:Text('${x['path']}'),onTap:()=>openItem(x));}).toList()))]);
+}

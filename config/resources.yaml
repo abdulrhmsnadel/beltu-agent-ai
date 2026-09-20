@@ -1,0 +1,10 @@
+resource_policy:
+  cpu_budget_percent: 30
+  memory_budget_percent: 30
+  gpu_vram_budget_percent: 45
+  min_concurrent_processes: 1
+  max_concurrent_processes: 2
+  poll_interval_seconds: 0.5
+  freetoken:
+    url: http://127.0.0.1:8000
+    pid_file: data/runtime/freetoken.pid

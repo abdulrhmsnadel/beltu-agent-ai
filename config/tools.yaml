@@ -1,0 +1,7 @@
+tools:
+  - subfinder
+  - assetfinder
+  - amass-passive
+  - httpx
+  - nmap
+  - nuclei

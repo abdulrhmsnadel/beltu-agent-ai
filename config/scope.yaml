@@ -1,0 +1,2 @@
+# Default-deny. Add only assets you are explicitly authorized to test.
+targets: []

@@ -1,0 +1,6 @@
+whatsapp:
+  enabled: false
+  api_version: ""
+  graph_base_url: "https://graph.facebook.com"
+  controller_numbers: []
+  approval_ttl_seconds: 600

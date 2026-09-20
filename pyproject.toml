@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "beltu"
+version = "1.1.0"
+description = "BELTU - Agentic security testing platform with persistent reasoning core"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "typer>=0.12,<1",
+  "rich>=13,<15",
+  "PyYAML>=6,<7",
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+]
+
+[project.scripts]
+beltu = "beltu.interface.cli.app:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,9 @@
+app:
+  name: BELTU
+  environment: local
+
+database:
+  path: data/beltu.db
+
+policy:
+  scope_file: config/scope.yaml

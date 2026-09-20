@@ -1,0 +1,45 @@
+brain:
+  mode: local_llm
+  llm_enabled: true
+  max_hypotheses_per_cycle: 3
+  max_actions_per_cycle: 3
+  llm:
+    enabled: true
+    provider: freetoken_local
+    base_url: http://127.0.0.1:8000/v1
+    model: auto
+    api_key_env: BELTU_LLM_API_KEY
+    api_key_required: false
+    local_only: true
+    use_json_mode: false
+    stream: true
+    timeout_seconds: 60
+    max_tokens: 1800
+    temperature: 0.1
+    fallback_to_heuristic: true
+    max_hypotheses: 3
+    max_actions: 3
+    system_prompt_path: prompts/llm/system.md
+    reasoning_prompt_path: prompts/llm/reasoning.md
+
+execution:
+  external_tools_enabled: false
+
+policy:
+  high_risk_requires_approval: true
+
+resource_policy:
+  cpu_budget_percent: 30
+  memory_budget_percent: 30
+  gpu_vram_budget_percent: 45
+  min_concurrent_processes: 1
+  max_concurrent_processes: 2
+  poll_interval_seconds: 0.5
+
+retry_policy:
+  base_delay_seconds: 0.25
+  max_delay_seconds: 5
+  jitter: 0
+
+scheduler:
+  workers: 4
