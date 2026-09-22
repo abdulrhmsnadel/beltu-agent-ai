@@ -555,7 +555,8 @@ class GeminiCloudProvider:
             raise GeminiCloudError(f"Gemini API key is missing; set {self.config.gemini_api_key_env}")
 
         # Privacy filtering must complete before a cloud-rate-limit slot is consumed.
-        system_safe = self._sanitize_prompt(system_prompt)
+        # Provider-owned policy text is trusted BELTU code, not target data.
+        system_safe = self._filter.scrub_text(system_prompt, limit=24_000)
         user_safe = self._sanitize_prompt(user_prompt)
 
         if not self._limiter.try_acquire():
@@ -660,7 +661,7 @@ class GeminiCloudProvider:
                 "observe": "inspect sanitized telemetry and the local operator state",
                 "advise": "identify mistakes, missing evidence, useful next checks, retries, corrections, or escalation",
                 "authority": "advisory only; the local operator chooses and executes tools",
-                "forbidden": ["final reports", "confirmed exploit payloads", "PoC code", "credentials", "session secrets", "direct tool invocation", "shell commands"],
+                "forbidden_categories": ["final_reporting", "exploit_payloads", "poc_code", "credential_material", "session_secrets", "direct_tool_execution", "shell_commands"],
             },
         }
         serialized = json.dumps(user_payload, ensure_ascii=True, sort_keys=True)
