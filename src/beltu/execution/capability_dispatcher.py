@@ -66,7 +66,7 @@ class CapabilityDispatcher:
             "thread_limit": limits.thread_limit,
             "max_parallel_processes": limits.max_parallel_processes,
             "affinity_cpus": list(limits.affinity_cpus),
-            "reason": limits.reason,
+            "reason": getattr(limits, "reason", ""),
         }
         effective_request = ExecutionRequest(
             request.scan_id,
