@@ -1,7 +1,7 @@
 name: beltu_mobile
 publish_to: 'none'
 description: BELTU Mobile Command Center
-version: 1.2.0+22
+version: 1.3.0+23
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
