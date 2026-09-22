@@ -10,6 +10,7 @@ class ExecutionRequest:
     target: str
     capability: str
     options: dict[str, Any] = field(default_factory=dict)
+    approval_verified: bool = False
 
 
 @dataclass(frozen=True, slots=True)
