@@ -778,6 +778,22 @@ def observation_links(observation_id: int = typer.Argument(..., min=1)) -> None:
     console.print(table)
 
 
+async def _queue_decision_execution(tasks: TaskRepository, orchestrator: Orchestrator, decision_id: int, scan_id: int) -> Task:
+    existing = tasks.list_for_decision(scan_id, decision_id)
+    active = [item for item in existing if item.status in {"pending", "running"}]
+    if active:
+        return active[-1]
+    task = tasks.create(
+        scan_id,
+        "capability.execute",
+        {"decision_id": decision_id},
+        priority=80,
+        max_attempts=2,
+    )
+    await orchestrator.scheduler.enqueue(task)
+    return task
+
+
 @app.command("decision-execute")
 def decision_execute(decision_id: int = typer.Argument(..., min=1)) -> None:
     """Execute one non-approval decision through the allowlisted capability layer."""
@@ -788,9 +804,8 @@ def decision_execute(decision_id: int = typer.Argument(..., min=1)) -> None:
             raise ValueError(f"Decision #{decision_id} not found")
         if decision.requires_approval and not approvals.has_valid_approved_decision(decision_id):
             raise PermissionError(f"Decision #{decision_id} requires a valid approved approval record")
-        task = tasks.create(decision.scan_id, "capability.execute", {"decision_id": decision.id})
         await orchestrator.start()
-        await orchestrator.scheduler.enqueue(task)
+        task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
         await orchestrator.scheduler.queue.join()
         final = tasks.get(task.id)
         await orchestrator.stop()
@@ -846,12 +861,20 @@ def approval_approve(
 ) -> None:
     """Approve exactly one persistent approval record."""
     try:
-        _, _, _, _, _, _, approvals = build_components()
+        _, scans, tasks, orchestrator, decisions, _, approvals = build_components()
         req = approvals.approve(approval_id, resolved_by="cli", token=token)
+        decision = decisions.get(req.decision_id)
+        if decision is None:
+            raise ValueError(f"Approved decision #{req.decision_id} no longer exists")
+        await orchestrator.start()
+        task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
+        await orchestrator.scheduler.queue.join()
+        final_task = tasks.get(task.id)
     except Exception as exc:
         console.print(f"[red]Blocked:[/red] {exc}")
         raise typer.Exit(code=2)
     console.print(f"Approval #{req.id} → APPROVED (decision #{req.decision_id})")
+    console.print(f"Execution task #{task.id} → {final_task.status}")
 
 
 @approval_app.command("reject")
