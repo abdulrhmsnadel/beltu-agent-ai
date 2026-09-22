@@ -747,7 +747,7 @@ def capability_history(scan_id: int = typer.Argument(..., min=1)) -> None:
     for row in repo.list_for_scan(scan_id):
         table.add_row(
             str(row["id"]), str(row["cycle_id"] or "-"), str(row["decision_id"] or "-"),
-            row["capability"], row["tool"] or "internal", f"{float(row["score"]):.3f}", row["created_at"],
+            row["capability"], row["tool"] or "internal", f"{float(row['score']):.3f}", row["created_at"],
         )
     console.print(table)
 
