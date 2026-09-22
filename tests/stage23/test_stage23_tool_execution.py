@@ -236,7 +236,7 @@ class FakeGovernor:
     monitor = None
 
     def tool_runtime_limits(self, tool_name):
-        return SimpleNamespace(thread_limit=1, max_parallel_processes=1, affinity_cpus=())
+        return SimpleNamespace(thread_limit=1, max_parallel_processes=1, affinity_cpus=(), reason="fixture")
 
     async def acquire_process(self):
         return None
