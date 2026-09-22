@@ -21,12 +21,8 @@ brain:
     max_actions: 3
     system_prompt_path: prompts/llm/system.md
     reasoning_prompt_path: prompts/llm/reasoning.md
-
     routing:
       enabled: true
-
-    # Optional heavy local security specialist. Disabled by default because
-    # Altar-1 is a 328 GB W4A16 model intended for a multi-GPU local node.
     altar1:
       enabled: false
       base_url: http://127.0.0.1:8001/v1
@@ -42,7 +38,7 @@ brain:
       activity_dir: data/runtime/altar1.active
 
 execution:
-  external_tools_enabled: false
+  external_tools_enabled: true
 
 policy:
   high_risk_requires_approval: true
