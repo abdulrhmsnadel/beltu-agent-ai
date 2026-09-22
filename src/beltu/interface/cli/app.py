@@ -861,18 +861,22 @@ def approval_approve(
 ) -> None:
     """Approve exactly one persistent approval record."""
     try:
-        _, scans, tasks, orchestrator, decisions, _, approvals = build_components()
+        _, _, tasks, orchestrator, decisions, _, approvals = build_components()
         req = approvals.approve(approval_id, resolved_by="cli", token=token)
         decision = decisions.get(req.decision_id)
         if decision is None:
             raise ValueError(f"Approved decision #{req.decision_id} no longer exists")
-        await orchestrator.start()
-        try:
-            task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
-            await orchestrator.scheduler.queue.join()
-            final_task = tasks.get(task.id)
-        finally:
-            await orchestrator.stop()
+
+        async def run_approved():
+            await orchestrator.start()
+            try:
+                task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
+                await orchestrator.scheduler.queue.join()
+                return task, tasks.get(task.id)
+            finally:
+                await orchestrator.stop()
+
+        task, final_task = asyncio.run(run_approved())
     except Exception as exc:
         console.print(f"[red]Blocked:[/red] {exc}")
         raise typer.Exit(code=2)
