@@ -685,7 +685,7 @@ class GeminiCloudProvider:
                 "advise": "identify mistakes, missing evidence, useful next checks, retries, corrections, continuation, escalation, or stop-escalation",
                 "feedback_loop": "the local operator receives this advisory and performs any resulting tool action in the next execution cycle",
                 "authority": "advisory only; the local operator chooses, approves, and executes tools",
-                "never_execute": true,
+                "never_execute": True,
                 "forbidden_categories": ["final_reporting", "exploit_payloads", "poc_code", "credential_material", "session_secrets", "direct_tool_execution", "shell_commands"],
             },
         }
