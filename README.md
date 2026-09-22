@@ -558,11 +558,19 @@ beltu report-list <scan-id>
 
 ## Approvals
 
+Approval commands are nested under `beltu approval`:
+
 ```bash
-beltu request ...
-beltu list
-beltu approve <approval-id>
-beltu reject <approval-id>
+beltu approval request <decision-id>
+beltu approval list
+beltu approval approve <approval-id> --token <token>
+beltu approval reject <approval-id> --token <token>
+```
+
+Optional request parameters:
+
+```bash
+beltu approval request <decision-id> --channel cli --ttl 600
 ```
 
 Use the exact subcommand help for argument details:
@@ -669,6 +677,11 @@ From the repository:
 
 ```bash
 cd mobile
+
+# The repository stores the Flutter/Dart source. If Android/iOS platform
+# folders are not present yet, generate them once with Flutter:
+flutter create .
+
 flutter pub get
 ```
 
