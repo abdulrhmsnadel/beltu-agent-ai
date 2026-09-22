@@ -12,7 +12,7 @@ Return exactly this JSON shape:
   ],
   "actions": [
     {
-      "action_kind": "one allowed action kind",
+      "action_kind": "one allowed action kind: surface_inventory|service_enrichment|endpoint_mapping|api_analysis|auth_analysis|access_control_analysis|business_logic_analysis|finding_validation|browser_automation|http_workflow|session_replay|api_manipulation|authorization_testing|business_logic_workflow|race_condition_testing",
       "action_payload": {
         "target": "exact current target",
         "hypothesis": "matching hypothesis statement",

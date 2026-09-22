@@ -21,6 +21,10 @@ class ToolAdapter(ABC):
     def parse_output(self, request: ExecutionRequest, stdout: str, stderr: str) -> list[dict[str, Any]]:
         return []
 
+    def cleanup_argv(self, argv: tuple[str, ...] | list[str]) -> None:
+        """Optional post-execution cleanup for private runtime artifacts."""
+        del argv
+
     @staticmethod
     def runtime_threads(request: ExecutionRequest, default: int = 8) -> int:
         limits = request.options.get("_runtime_limits", {})

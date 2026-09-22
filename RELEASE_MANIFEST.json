@@ -7,8 +7,19 @@
     "gpu_vram_governor",
     "simplified_cli",
     "mobile_command_center",
-    "report_downloads"
+    "report_downloads",
+    "interactive_tool_execution",
+    "autonomous_low_risk_execution"
   ],
-  "tests": "120 passed",
+  "interactive_capabilities": [
+    "browser_automation",
+    "http_workflows",
+    "session_replay",
+    "api_manipulation",
+    "authorization_testing",
+    "business_logic_workflows",
+    "race_condition_testing"
+  ],
+  "tests": "128 passed",
   "doctor": "9/9 passed"
 }

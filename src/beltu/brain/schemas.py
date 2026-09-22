@@ -13,6 +13,13 @@ ALLOWED_ACTIONS = frozenset({
     "access_control_analysis",
     "business_logic_analysis",
     "finding_validation",
+    "browser_automation",
+    "http_workflow",
+    "session_replay",
+    "api_manipulation",
+    "authorization_testing",
+    "business_logic_workflow",
+    "race_condition_testing",
 })
 
 RISK_LEVELS = frozenset({"low", "medium", "high"})

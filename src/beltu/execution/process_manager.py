@@ -34,6 +34,16 @@ class ProcessManager:
             raise FileNotFoundError(f"Required tool not installed or not in PATH: {binary}")
         return path
 
+    @staticmethod
+    def _safe_environment() -> dict[str, str]:
+        source = os.environ
+        env = {"PATH": source.get("PATH", "")}
+        for key in ("HOME", "USER", "LANG", "LC_ALL", "TMPDIR", "XDG_CACHE_HOME", "PLAYWRIGHT_BROWSERS_PATH"):
+            value = source.get(key)
+            if value:
+                env[key] = value
+        return env
+
     async def run(
         self,
         argv: list[str],
@@ -49,12 +59,11 @@ class ProcessManager:
         binary = self.resolve_binary(argv[0])
         safe_argv = [binary, *argv[1:]]
         started = time.monotonic()
-        env = {"PATH": os.environ.get("PATH", "")}
         proc = await asyncio.create_subprocess_exec(
             *safe_argv,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            env=env,
+            env=self._safe_environment(),
         )
         if resource_governor is not None and tool_name:
             resource_governor.register_process(proc.pid, tool_name)

@@ -126,11 +126,11 @@ You should see BELTU 1.2.0 in the status output after installation.
 beltu doctor --strict
 ```
 
-The release is intentionally conservative:
+The release is intentionally controlled:
 
 - scope is default-deny
-- high-risk actions require approval
-- external tool autonomy is disabled by default
+- low-risk external tools may execute autonomously when enabled
+- medium/high-risk active testing remains approval-gated
 - local inference is loopback-only
 - remote operations bind to loopback by default
 - secrets, runtime databases, evidence, and model weights are not meant to be committed
@@ -166,23 +166,34 @@ beltu target your-authorized-domain.example
 
 ## 7. Configure execution
 
-The default repository configuration keeps external tool autonomy off:
-
-```yaml
-execution:
-  external_tools_enabled: false
-```
-
-Keep this disabled while testing the agent core.
-
-When working on an explicitly authorized target and you are ready to allow BELTU to schedule the registered tools, change it to:
+BELTU 1.2.0 now supports autonomous execution for registered low-risk adapters:
 
 ```yaml
 execution:
   external_tools_enabled: true
 ```
 
-High-risk operations remain approval-gated.
+This does **not** turn BELTU into an unrestricted shell agent. The execution path is:
+
+```text
+LLM / planner
+    ↓
+scope
+    ↓
+policy
+    ↓
+approval gate
+    ↓
+capability registry
+    ↓
+resource governor
+    ↓
+allowlisted adapter
+    ↓
+bounded worker
+```
+
+Passive discovery adapters can run autonomously inside the explicit scope. Active HTTP, browser, session, authorization, business-logic, API-manipulation, and race-condition workflows require an approved decision.
 
 ---
 
@@ -461,6 +472,105 @@ NVIDIA telemetry is used when `nvidia-smi` is available.
 
 ---
 
+# Interactive tool execution — v1.2.0
+
+The Tool Execution Layer now contains real bounded workers instead of only reconnaissance adapters.
+
+| Capability | Adapter | Behavior |
+|---|---|---|
+| Browser automation | `browser` | Playwright-based UI steps: goto/click/fill/press/wait/extract/screenshot; no arbitrary JavaScript |
+| Burp-style HTTP workflows | `http-workflow` | Bounded request sequences, variables, response assertions and replay |
+| Session replay | `session-replay` | Replays workflows with a local session profile; raw secrets are not copied into observations |
+| API manipulation | `api-manipulation` | Bounded query/header/JSON mutations against an identified operation |
+| Authorization testing | `authorization-matrix` | Compare explicitly supplied principals on the same operation |
+| Business-logic workflows | `business-logic` | Ordered state-aware HTTP steps with assertions |
+| Race-condition testing | `race-condition` | Bounded concurrent requests, maximum 20 requests / 8 workers |
+
+All active capabilities are approval-gated. Worker request counts, concurrency, payload size, response size, URL scope, and browser steps are bounded in code.
+
+## Session profiles
+
+Session material is stored only under:
+
+```text
+data/runtime/sessions/
+```
+
+A simple HTTP session profile can look like:
+
+```json
+{
+  "headers": {
+    "Authorization": "Bearer <local-secret>"
+  },
+  "cookies": [
+    {
+      "name": "session",
+      "value": "<local-secret>"
+    }
+  ]
+}
+```
+
+Use only local profiles you created for the authorized engagement. BELTU redacts common authorization/cookie/token patterns before observations are persisted.
+
+The browser worker can also save a Playwright storage-state profile with `save_session`, which can then be consumed by the session replay workflow.
+
+## Interactive execution examples
+
+The agent/LLM can create declarative payloads such as:
+
+```json
+{
+  "target": "target.example",
+  "requests": [
+    {
+      "method": "GET",
+      "url": "https://target.example/account",
+      "assert": {"status": 200}
+    },
+    {
+      "method": "POST",
+      "url": "https://target.example/orders",
+      "json_body": {"item_id": "{{item_id}}"},
+      "extract": {"item_id": {"json_path": "id"}}
+    }
+  ]
+}
+```
+
+API mutation payloads use:
+
+```json
+{
+  "request": {
+    "method": "POST",
+    "url": "https://target.example/orders",
+    "json_body": {"quantity": 1}
+  },
+  "mutations": [
+    {"location": "json", "name": "quantity", "value": 0},
+    {"location": "json", "name": "quantity", "value": 2}
+  ]
+}
+```
+
+Race testing is intentionally narrow:
+
+```json
+{
+  "request": {
+    "method": "POST",
+    "url": "https://target.example/orders/1/claim",
+    "json_body": {"confirm": true}
+  },
+  "count": 6,
+  "concurrency": 6
+}
+```
+
+The LLM proposes these structures; the control plane still decides whether execution is allowed.
+
 # Tooling
 
 The core package does not require every security tool just to start BELTU.
@@ -475,6 +585,13 @@ Registered capability adapters currently include:
 | HTTPX | HTTP service verification |
 | Nmap | service discovery |
 | Nuclei | template-based candidate detection |
+| Browser | bounded Playwright UI automation |
+| HTTP Workflow | bounded request/replay sequences |
+| Session Replay | local-profile session replay |
+| API Manipulation | bounded parameter mutations |
+| Authorization Matrix | interactive principal comparison |
+| Business Logic | bounded workflow/state execution |
+| Race Condition | bounded concurrent request testing |
 
 Install only the tools you need and keep them within the scope of your authorized engagement.
 

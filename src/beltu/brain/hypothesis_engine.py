@@ -76,6 +76,36 @@ class HeuristicHypothesisEngine:
                 )
             )
 
+        workflow_summary = context.business_logic_surface.get("summary", {}) if isinstance(context.business_logic_surface, dict) else {}
+        if isinstance(workflow_summary, dict) and int(workflow_summary.get("workflows", 0) or 0) > 0:
+            proposals.append(HypothesisProposal(
+                "Business-logic workflows are modeled and may require active state-transition validation.",
+                tuple(item["id"] for item in obs if item["kind"] in {"workflow", "state_transition", "order", "cart"}),
+                0.83,
+            ))
+
+        authz_summary = context.authorization_surface.get("summary", {}) if isinstance(context.authorization_surface, dict) else {}
+        if isinstance(authz_summary, dict) and int(authz_summary.get("anomalies", 0) or 0) > 0:
+            proposals.append(HypothesisProposal(
+                "Authorization anomalies are present and may require an interactive principal-to-operation comparison.",
+                access_ids,
+                0.86,
+            ))
+
+        if any(item["kind"] in {"api_endpoint", "openapi"} for item in obs):
+            proposals.append(HypothesisProposal(
+                "API operations are available for bounded parameter manipulation and response-difference analysis.",
+                api_ids,
+                0.80,
+            ))
+
+        if auth_ids:
+            proposals.append(HypothesisProposal(
+                "A local session replay workflow could test whether authenticated behavior remains consistent across selected requests.",
+                auth_ids,
+                0.77,
+            ))
+
         if finding_items:
             ids = tuple(int(item["id"]) for item in finding_items[:10] if isinstance(item, dict) and str(item.get("id", "")).isdigit())
             proposals.append(HypothesisProposal(

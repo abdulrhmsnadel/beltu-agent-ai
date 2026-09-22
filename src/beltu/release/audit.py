@@ -48,7 +48,12 @@ class ReleaseAudit:
         cors = (remote.get("remote") or {}).get("cors_origins", [])
         targets = scope.get("targets", [])
 
-        checks.append(AuditCheck("external_tools_default_off", not external, f"external_tools_enabled={external}"))
+        high_risk_approval = bool((agent.get("policy") or {}).get("high_risk_requires_approval", False))
+        checks.append(AuditCheck(
+            "external_tools_policy_safe",
+            (not external) or (isinstance(targets, list) and high_risk_approval),
+            f"external_tools_enabled={external}; explicit_scope_entries={len(targets) if isinstance(targets, list) else 'invalid'}; high_risk_requires_approval={high_risk_approval}",
+        ))
         loopback_host = (urlparse(llm_url).hostname or "").lower()
         local_llm_safe = (not llm) or (llm_provider == "freetoken_local" and llm_local_only and loopback_host in {"127.0.0.1", "localhost", "::1"} and not llm_key_required)
         checks.append(AuditCheck("llm_local_only", local_llm_safe, f"provider={llm_provider!r} base_url={llm_url!r}"))
