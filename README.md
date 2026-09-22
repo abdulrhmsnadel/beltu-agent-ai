@@ -1,4 +1,4 @@
-# BELTU 1.2.0 — Multi-Model Local Security Agent
+# BELTU 1.3.0 — Three-Tier Multi-Model Security Agent
 
 BELTU is a **local-first agentic security-testing platform** for explicitly authorized bug-bounty, lab, and red-team assessments. It keeps persistent scan state, builds context from observations and evidence, generates hypotheses, plans next actions, selects capabilities, applies scope/policy/approval/resource gates, executes allowlisted security tooling, correlates evidence, validates findings, and generates reports.
 
@@ -114,7 +114,7 @@ beltu --help
 beltu status
 ```
 
-You should see BELTU 1.2.0 in the status output after installation.
+You should see BELTU 1.3.0 in the status output after installation.
 
 ---
 
@@ -194,6 +194,119 @@ bounded worker
 ```
 
 Passive discovery adapters can run autonomously inside the explicit scope. Active HTTP, browser, session, authorization, business-logic, API-manipulation, and race-condition workflows require an approved decision.
+
+---
+
+# Gemini Cloud Co-Pilot
+
+BELTU 1.3.0 adds Gemini as a **cloud advisory co-pilot** beside the standard local operator and optional Altar-1 reviewer.
+
+The roles are deliberately separate:
+
+```text
+Local :8000
+  primary operator
+  owns final reasoning
+        │
+        ├──► Gemini Cloud
+        │      observes sanitized state
+        │      diagnoses mistakes
+        │      suggests next evidence/capability
+        │
+        └──► Altar-1 :8001
+               deep local security review
+               
+Gemini never executes BELTU tools.
+The local operator is the only component that turns advice into execution.
+```
+
+Gemini can receive a minimized snapshot containing:
+
+- current scan/target state
+- sanitized tool observations
+- asset and endpoint summaries
+- API/auth/authorization/workflow metadata
+- current hypotheses
+- the Local operator's structured draft: summary, hypotheses, action kinds, capability/tool names, rationale, risk and evidence references
+
+Gemini is asked specifically to return:
+
+```text
+continue
+retry
+correct
+escalate_to_deep_review
+stop_escalation
+observe
+```
+
+plus a reason, focus, confidence, and an optional recommended capability.
+
+The Local operator then performs a **final local reasoning pass** using that advisory. The recommendation is not executed directly.
+
+## Cloud privacy boundary
+
+Before every Gemini request, BELTU applies a local scrubber that redacts common:
+
+```text
+Authorization
+Cookie / Set-Cookie
+passwords
+API keys
+client secrets
+access/refresh tokens
+JWTs
+session identifiers
+private keys
+credentials
+```
+
+Final reports, confirmed exploit payloads, PoC code, credentials, and session secrets are excluded from the cloud-visible context.
+
+The scrubber runs **before** the Gemini rate-limit slot is consumed and before the HTTP request is created.
+
+## Gemini fallback
+
+Gemini is not a runtime dependency for the agent loop.
+
+```text
+Gemini OK
+   ↓
+advice
+   ↓
+Local final pass
+
+Gemini 429 / quota / safety block / timeout / network failure
+   ↓
+advice omitted
+   ↓
+Local operator continues
+```
+
+The cloud failure is recorded in the router trace; it does not crash the TaskQueue or Orchestrator.
+
+## Gemini configuration
+
+Never place the Gemini key in `config/agent.yaml` or source code.
+
+Set it in the environment:
+
+```bash
+export GEMINI_API_KEY="YOUR_KEY"
+```
+
+Then configure only the environment-variable name:
+
+```yaml
+gemini:
+  enabled: true
+  api_key_env: GEMINI_API_KEY
+  model: gemini-3.8-flash
+  requests_per_minute: 15
+  fallback_to_standard: true
+```
+
+The `15 RPM` value is a conservative BELTU-local limiter. Gemini's actual quota is project/model/tier dependent and should be checked in Google AI Studio.
 
 ---
 
