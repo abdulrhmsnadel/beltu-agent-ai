@@ -30,7 +30,7 @@ class JobFileAdapter(ToolAdapter):
         payload = self._job_payload(request)
         with path.open("x", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, sort_keys=True)
-            handle.write("\\n")
+            handle.write("\n")
         try:
             path.chmod(0o600)
         except OSError:
