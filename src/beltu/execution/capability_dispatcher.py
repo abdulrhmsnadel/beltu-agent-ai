@@ -56,7 +56,7 @@ class CapabilityDispatcher:
         if target is None or target.value.strip().lower() != normalized.lower():
             raise ScopeViolation("Execution target does not match the scan's registered target")
         adapter = self.registry.resolve(request.capability, request.options.get("tool"))
-        if adapter.requires_approval:
+        if adapter.requires_approval and not request.approval_verified:
             raise PermissionError(
                 f"Capability {request.capability!r} via {adapter.name!r} requires explicit approval"
             )
@@ -68,10 +68,18 @@ class CapabilityDispatcher:
             "affinity_cpus": list(limits.affinity_cpus),
             "reason": limits.reason,
         }
-        effective_request = ExecutionRequest(request.scan_id, normalized, request.capability, runtime_options)
-        argv = adapter.build_argv(effective_request)
-        before = await self.governor.acquire_process()
+        effective_request = ExecutionRequest(
+            request.scan_id,
+            normalized,
+            request.capability,
+            runtime_options,
+            approval_verified=request.approval_verified,
+        )
+        argv: list[str] = []
+        before = None
         try:
+            argv = adapter.build_argv(effective_request)
+            before = await self.governor.acquire_process()
             proc = await self.process_manager.run(
                 argv,
                 adapter.timeout_seconds,
@@ -80,9 +88,12 @@ class CapabilityDispatcher:
                 resource_governor=self.governor,
                 tool_name=adapter.name,
             )
+            parsed = adapter.parse_output(effective_request, proc.stdout, proc.stderr)
         finally:
-            self.governor.release_process()
-        parsed = adapter.parse_output(effective_request, proc.stdout, proc.stderr)
+            if before is not None:
+                self.governor.release_process()
+            adapter.cleanup_argv(argv)
+
         evidence_ids: list[int] = []
         if self.evidence_collector is not None:
             out_ev = self.evidence_collector.collect_text(
@@ -111,6 +122,7 @@ class CapabilityDispatcher:
                     request.scan_id,
                     ObservationInput(item["kind"], item["subject"], item.get("data", {}), item["source"], item.get("confidence", 0.5)),
                 ))
+        del stored
         return ExecutionResult(
             request=request,
             tool=adapter.name,
