@@ -59,18 +59,24 @@ def test_brain_generates_and_persists_reasoning_cycle(tmp_path: Path):
         await orchestrator.start()
         scan, _ = await agent.start_scan(target.id)
         await orchestrator.scheduler.queue.join()
+
+        agent.ingest_observation(
+            scan.id,
+            ObservationInput("api_endpoint", "/v1/users", {"children": ["/v1/orders"]}, "fixture", 0.9),
+        )
+        cycle = agent.think(scan.id)
+
+        assert cycle.hypotheses
+        assert cycle.decisions
+        assert hypotheses.list_for_scan(scan.id)
+        assert decisions.list_for_scan(scan.id)
+        assert observations.list_for_scan(scan.id)
+        assert cycle.decisions[0].accepted is True
+
+        await orchestrator.stop()
         return agent, scan, observations, hypotheses, decisions, orchestrator
 
     agent, scan, observations, hypotheses, decisions, orchestrator = asyncio.run(run())
-    agent.ingest_observation(scan.id, ObservationInput("api_endpoint", "/v1/users", {"children": ["/v1/orders"]}, "fixture", 0.9))
-    cycle = agent.think(scan.id)
-    assert cycle.hypotheses
-    assert cycle.decisions
-    assert hypotheses.list_for_scan(scan.id)
-    assert decisions.list_for_scan(scan.id)
-    assert observations.list_for_scan(scan.id)
-    assert cycle.decisions[0].accepted is True
-    asyncio.run(orchestrator.stop())
 
 
 def test_decision_engine_rejects_unknown_action():
