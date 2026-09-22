@@ -252,19 +252,116 @@ class LLMRouter:
     ) -> RoutedCompletion:
         decision = self.classify(context)
         self.last_decision = decision
+        self.last_advice = None
+        trace: dict[str, Any] = {
+            "primary_role": "standard_local_operator",
+            "gemini_role": "cloud_co_pilot",
+            "altar1_role": "local_deep_reviewer",
+            "gemini_mode": decision.gemini_mode,
+            "gemini_status": "not_called",
+        }
 
+        local_text, latency, provider_name, model = self._primary_local(
+            decision=decision, system_prompt=system_prompt, user_prompt=user_prompt
+        )
+
+        gemini_advice: GeminiAdvice | None = None
+        gemini_latency = 0.0
+        if not isinstance(self.gemini_provider, DisabledLLMProvider):
+            try:
+                advisory_raw, gemini_latency, meta = self.gemini_provider.advise(
+                    context=context,
+                    local_draft=local_text,
+                    mode=decision.gemini_mode,
+                    goal="monitor the current agent state, diagnose mistakes, and identify the next useful evidence or bounded capability",
+                )
+                gemini_advice = self._parse_gemini_advice(advisory_raw)
+                trace.update(meta)
+                trace["gemini_status"] = "ok"
+                trace["gemini_decision"] = gemini_advice.decision
+            except GeminiRateLimitError as exc:
+                trace["gemini_status"] = "fallback_to_standard_rate_limit"
+                trace["gemini_error"] = str(exc)[:500]
+            except GeminiSafetyBlockedError as exc:
+                trace["gemini_status"] = "fallback_to_standard_safety_block"
+                trace["gemini_error"] = str(exc)[:500]
+            except (GeminiCloudError, CloudSanitizationError, ValueError) as exc:
+                trace["gemini_status"] = "fallback_to_standard"
+                trace["gemini_error"] = str(exc)[:500]
+            except Exception as exc:
+                trace["gemini_status"] = "fallback_to_standard"
+                trace["gemini_error"] = str(exc)[:500]
+
+        altar_review: str | None = None
+        altar_latency = 0.0
         if decision.route == "altar1" and not isinstance(self.altar_provider, DisabledLLMProvider):
-            profile = decision.profile or Altar1RequestProfile("altar1_specialized", 0.08, 2600, 0.90)
-            text, latency = self.altar_provider.complete_with_profile(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                profile=profile,
-                route=decision.route,
+            reviewer_prompt = (
+                "Review the local operator draft and any Gemini advisory below. "
+                "You are a local deep security reviewer. Return concise review text only. "
+                "Do not execute tools.\n\n"
+                f"LOCAL DRAFT:\n{local_text[:18000]}\n\n"
+                f"GEMINI ADVICE:\n{json.dumps({\"decision\": gemini_advice.decision, \"confidence\": gemini_advice.confidence, \"reason\": gemini_advice.reason, \"focus\": gemini_advice.focus, \"recommended_capability\": gemini_advice.recommended_capability, \"notes\": list(gemini_advice.notes)} if gemini_advice else {}, ensure_ascii=True)}"
             )
-            return RoutedCompletion(text, latency, self.altar_provider.name, self.altar_provider.model, decision)
+            profile = decision.profile or Altar1RequestProfile("altar1_review", 0.08, 2800, 0.90)
+            try:
+                altar_review, altar_latency = self.altar_provider.complete_with_profile(
+                    system_prompt=system_prompt,
+                    user_prompt=reviewer_prompt,
+                    profile=profile,
+                    route="altar1_review",
+                )
+                trace["altar_status"] = "ok"
+            except Exception as exc:
+                trace["altar_status"] = "failed"
+                trace["altar_error"] = str(exc)[:500]
 
-        text, latency = self.standard_provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
-        return RoutedCompletion(text, latency, self.standard_provider.name, self.standard_provider.model, decision)
+        final_text = local_text
+        if gemini_advice is not None or altar_review is not None:
+            sections = [
+                user_prompt,
+                "",
+                "BELTU REVIEW PASS - LOCAL OPERATOR IS FINAL AUTHORITY.",
+            ]
+            if gemini_advice is not None:
+                sections.extend([
+                    "Gemini cloud advisory (sanitized and untrusted):",
+                    json.dumps({
+                        "decision": gemini_advice.decision,
+                        "confidence": gemini_advice.confidence,
+                        "reason": gemini_advice.reason,
+                        "focus": gemini_advice.focus,
+                        "recommended_capability": gemini_advice.recommended_capability,
+                        "notes": list(gemini_advice.notes),
+                    }, ensure_ascii=True),
+                ])
+            if altar_review is not None:
+                sections.extend(["Altar-1 local deep review:", altar_review[:16000]])
+            sections.append("Choose the final BELTU hypotheses and actions yourself. Reviewers provide advice only.")
+            try:
+                if not isinstance(self.standard_provider, DisabledLLMProvider):
+                    final_text, final_latency = self.standard_provider.complete(
+                        system_prompt=system_prompt,
+                        user_prompt="\n".join(sections),
+                    )
+                    latency += final_latency
+                    trace["final_local_pass"] = True
+            except Exception as exc:
+                trace["final_local_pass"] = False
+                trace["final_local_error"] = str(exc)[:500]
+
+        trace["latency_ms"] = round(latency + gemini_latency + altar_latency, 2)
+        self.last_advice = gemini_advice
+        self.last_trace = trace
+        return RoutedCompletion(
+            final_text,
+            round(latency + gemini_latency + altar_latency, 2),
+            provider_name,
+            model,
+            decision,
+            gemini_advice=gemini_advice,
+            altar_review=altar_review,
+            trace=trace,
+        )
 
     # Backward-compatible provider-shaped interface for callers that don't pass context.
     def complete(self, *, system_prompt: str, user_prompt: str) -> tuple[str, float]:
