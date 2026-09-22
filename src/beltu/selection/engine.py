@@ -249,9 +249,15 @@ class IntelligentCapabilitySelector:
         if profile.name == "offline.finding.correlation":
             summary=context.finding_surface.get("summary", {}) if isinstance(context.finding_surface,dict) else {}
             structured_fit=isinstance(summary,dict) and int(summary.get("findings",0) or 0)>0
-        if profile.name == "offline.business_logic.workflow_analysis":
+        if profile.name in {"offline.business_logic.workflow_analysis", "business_logic.workflow", "race_condition.test"}:
             summary = context.business_logic_surface.get("summary", {}) if isinstance(context.business_logic_surface, dict) else {}
             structured_fit = isinstance(summary, dict) and int(summary.get("workflows", 0) or 0) > 0
+        if profile.name == "authorization.interactive":
+            summary = context.authorization_surface.get("summary", {}) if isinstance(context.authorization_surface, dict) else {}
+            structured_fit = isinstance(summary, dict) and int(summary.get("anomalies", 0) or 0) > 0
+        if profile.name in {"api.manipulation"}:
+            summary = context.api_surface.get("summary", {}) if isinstance(context.api_surface, dict) else {}
+            structured_fit = isinstance(summary, dict) and int(summary.get("operations", 0) or 0) > 0
         if profile.required_kinds and not (profile.required_kinds & present) and not structured_fit:
             return None
         blocked = profile.blocked_by_kinds & present
