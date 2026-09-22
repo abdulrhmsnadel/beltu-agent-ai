@@ -60,8 +60,8 @@ class LLMReasoningEngine:
             else:
                 raw, provider_latency = self.provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
                 self.last_route = None
-            self.last_gemini_advice = None
-            self.last_route_trace = {}
+                self.last_gemini_advice = None
+                self.last_route_trace = {}
 
             payload = extract_json(raw)
             response = validate_response(
