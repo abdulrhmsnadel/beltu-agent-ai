@@ -112,9 +112,17 @@ def _request(scope: ScopeGuard, target: str, spec: dict[str, Any], variables: di
 
 
 def _emit(kind: str, subject: str, data: dict[str, Any], confidence: float = 0.88) -> None:
+    safe_json = redact_text(json.dumps(data, ensure_ascii=False))
+    try:
+        safe_data = json.loads(safe_json)
+    except json.JSONDecodeError:
+        safe_data = {"value": safe_json}
     print(json.dumps({
-        "kind": kind, "subject": subject, "data": redact_text(json.dumps(data, ensure_ascii=False)),
-        "source": "beltu-http-worker", "confidence": confidence,
+        "kind": kind,
+        "subject": redact_url(subject),
+        "data": safe_data,
+        "source": "beltu-http-worker",
+        "confidence": confidence,
     }, ensure_ascii=False))
 
 
