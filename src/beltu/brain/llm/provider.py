@@ -482,6 +482,8 @@ class GeminiCloudProvider:
     def __post_init__(self) -> None:
         if not self.config.gemini_api_key_env.strip():
             raise ValueError("Gemini API key environment variable name cannot be empty")
+        if not self.config.gemini_scrub_before_send:
+            raise ValueError("Gemini cloud scrubbing is mandatory and cannot be disabled")
         policy = CloudDataPolicy(
             enabled=self.config.gemini_scrub_before_send,
             max_input_chars=self.config.gemini_max_input_chars,
@@ -610,7 +612,8 @@ class GeminiCloudProvider:
         return self._extract_text(parsed), elapsed_ms
 
     def complete(self, *, system_prompt: str, user_prompt: str) -> tuple[str, float]:
-        return self._post(system_prompt=system_prompt, user_prompt=user_prompt)
+        del system_prompt, user_prompt
+        raise RuntimeError("GeminiCloudProvider is advisory-only; use advise() with AgentContext")
 
     def advise(self, *, context: AgentContext, local_draft: str, mode: str, goal: str) -> tuple[str, float, dict[str, Any]]:
         payload = self._filter.context_payload(context)
