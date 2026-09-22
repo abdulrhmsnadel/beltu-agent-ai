@@ -17,8 +17,8 @@ class LLMConfig:
     """BELTU local multi-model LLM configuration.
 
     The existing top-level fields remain the standard reasoning backend for
-    backward compatibility. v1.2 adds an optional Altar-1 local backend and a
-    deterministic router. Both local providers are loopback-only by default.
+    backward compatibility. v1.3 adds a Gemini cloud co-pilot beside the
+    standard local operator and optional Altar-1 local deep reviewer.
     """
 
     enabled: bool = True
