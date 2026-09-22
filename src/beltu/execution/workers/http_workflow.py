@@ -13,7 +13,7 @@ from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 from beltu.policy.scope_guard import ScopeGuard
 from beltu.execution.workers.common import (
     apply_template, bounded_int, extract_dotted, load_session_profile,
-    redact_text, scope_url, session_headers,
+    redact_text, redact_url, scope_url, session_headers,
 )
 
 MAX_BODY_BYTES = 1_000_000
@@ -99,8 +99,8 @@ def _request(scope: ScopeGuard, target: str, spec: dict[str, Any], variables: di
     body_hash = hashlib.sha256(data).hexdigest()
     return {
         "method": method,
-        "url": url,
-        "final_url": final_url,
+        "url": redact_url(url),
+        "final_url": redact_url(final_url),
         "status": status,
         "content_type": content_type,
         "body_length": len(data),
