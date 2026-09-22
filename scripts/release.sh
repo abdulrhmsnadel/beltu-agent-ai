@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+python3 -m pip install -e '.[test]'
 python3 -m pytest -q
 python3 -m compileall -q src
 beltu doctor --strict
@@ -17,7 +18,7 @@ with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
     for p in root.rglob('*'):
         if not p.is_file(): continue
         rel=p.relative_to(root).as_posix()
-        if rel.startswith(('dist/','.git/','.pytest_cache/','data/targets/','data/evidence/','data/reports/')): continue
+        if rel.startswith(('dist/','.git/','.pytest_cache/','.venv/','.mypy_cache/','.ruff_cache/','data/targets/','data/evidence/','data/reports/','mobile/build/','mobile/.dart_tool/')): continue
         if rel=='data/beltu.db' or rel=='patch2.py' or rel.endswith('.pyc') or '__pycache__/' in rel: continue
         z.write(p,rel)
 digest=hashlib.sha256(out.read_bytes()).hexdigest()
