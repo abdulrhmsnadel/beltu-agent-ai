@@ -9,6 +9,6 @@
     "mobile_command_center",
     "report_downloads"
   ],
-  "tests": "CI-verified after final fixes",
-  "doctor": "CI-verified after final fixes"
+  "tests": "120 passed",
+  "doctor": "9/9 passed"
 }
