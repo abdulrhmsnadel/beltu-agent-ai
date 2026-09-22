@@ -51,7 +51,7 @@ class ReleaseAudit:
         high_risk_approval = bool((agent.get("policy") or {}).get("high_risk_requires_approval", False))
         checks.append(AuditCheck(
             "external_tools_policy_safe",
-            (not external) or (bool(targets) and high_risk_approval),
+            (not external) or (isinstance(targets, list) and high_risk_approval),
             f"external_tools_enabled={external}; explicit_scope_entries={len(targets) if isinstance(targets, list) else 'invalid'}; high_risk_requires_approval={high_risk_approval}",
         ))
         loopback_host = (urlparse(llm_url).hostname or "").lower()
