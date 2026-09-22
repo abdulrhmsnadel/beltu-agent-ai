@@ -21,6 +21,8 @@ class LLMReasoningEngine:
         self.config = config
         self.provider = provider
         self.last_route = None
+        self.last_gemini_advice = None
+        self.last_route_trace: dict = {}
 
     def run(self, context: AgentContext) -> LLMRunResult:
         system_prompt = load_prompt(
@@ -53,9 +55,13 @@ class LLMReasoningEngine:
                 provider_name = routed.provider_name
                 provider_model = routed.model
                 self.last_route = routed.decision
+                self.last_gemini_advice = routed.gemini_advice
+                self.last_route_trace = routed.trace or {}
             else:
                 raw, provider_latency = self.provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
                 self.last_route = None
+                self.last_gemini_advice = None
+                self.last_route_trace = {}
 
             payload = extract_json(raw)
             response = validate_response(

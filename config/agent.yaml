@@ -23,6 +23,28 @@ brain:
     reasoning_prompt_path: prompts/llm/reasoning.md
     routing:
       enabled: true
+
+    gemini:
+      enabled: true
+      provider: google_gemini
+      api_key_env: GEMINI_API_KEY
+      model: gemini-3.8-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta
+      timeout_seconds: 30
+      max_output_tokens: 4096
+      max_input_chars: 1500000
+      max_observation_chars: 100000
+      requests_per_minute: 15
+      burst: 1
+      retry_after_seconds: 5
+      fallback_to_standard: true
+      scrub_before_send: true
+      allow_final_reports: false
+      allow_exploit_payloads: false
+      allow_poc_code: false
+      allow_session_data: false
+      allow_credentials: false
+
     altar1:
       enabled: false
       base_url: http://127.0.0.1:8001/v1

@@ -1,6 +1,6 @@
 {
   "name": "BELTU",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "local_ai": "FreeToken",
   "features": [
     "local_llm",
@@ -9,7 +9,17 @@
     "mobile_command_center",
     "report_downloads",
     "interactive_tool_execution",
-    "autonomous_low_risk_execution"
+    "autonomous_low_risk_execution",
+    "gemini_cloud_copilot",
+    "privacy_scrubber",
+    "three_tier_llm_router",
+    "gemini_rate_limiter",
+    "local_final_authority",
+    "gemini_cloud_copilot",
+    "privacy_scrubber",
+    "three_tier_llm_router",
+    "gemini_rate_limiter",
+    "local_final_authority"
   ],
   "interactive_capabilities": [
     "browser_automation",
@@ -20,6 +30,16 @@
     "business_logic_workflows",
     "race_condition_testing"
   ],
-  "tests": "128 passed",
-  "doctor": "9/9 passed"
+  "tests": "136 passed",
+  "doctor": "9/9 passed",
+  "gemini": {
+    "model": "gemini-3.8-flash",
+    "api_key_env": "GEMINI_API_KEY",
+    "advisory_only": true,
+    "final_reports": false,
+    "exploit_payloads": false,
+    "poc_code": false,
+    "session_data": false,
+    "credentials": false
+  }
 }
