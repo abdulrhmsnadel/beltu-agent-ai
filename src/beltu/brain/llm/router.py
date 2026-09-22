@@ -262,7 +262,9 @@ class LLMRouter:
         }
 
         local_text, latency, provider_name, model = self._primary_local(
-            decision=decision, system_prompt=system_prompt, user_prompt=user_prompt
+            decision=decision,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
         )
 
         gemini_advice: GeminiAdvice | None = None
@@ -273,7 +275,7 @@ class LLMRouter:
                     context=context,
                     local_draft=local_text,
                     mode=decision.gemini_mode,
-                    goal="monitor the current agent state, diagnose mistakes, and identify the next useful evidence or bounded capability",
+                    goal="monitor the agent, diagnose failed or weak reasoning, and identify useful evidence or a bounded next capability",
                 )
                 gemini_advice = self._parse_gemini_advice(advisory_raw)
                 trace.update(meta)
@@ -295,12 +297,21 @@ class LLMRouter:
         altar_review: str | None = None
         altar_latency = 0.0
         if decision.route == "altar1" and not isinstance(self.altar_provider, DisabledLLMProvider):
+            advice_payload = {}
+            if gemini_advice is not None:
+                advice_payload = {
+                    "decision": gemini_advice.decision,
+                    "confidence": gemini_advice.confidence,
+                    "reason": gemini_advice.reason,
+                    "focus": gemini_advice.focus,
+                    "recommended_capability": gemini_advice.recommended_capability,
+                    "notes": list(gemini_advice.notes),
+                }
             reviewer_prompt = (
-                "Review the local operator draft and any Gemini advisory below. "
+                "Review the local operator draft and Gemini advisory below. "
                 "You are a local deep security reviewer. Return concise review text only. "
-                "Do not execute tools.\n\n"
-                f"LOCAL DRAFT:\n{local_text[:18000]}\n\n"
-                f"GEMINI ADVICE:\n{json.dumps({\"decision\": gemini_advice.decision, \"confidence\": gemini_advice.confidence, \"reason\": gemini_advice.reason, \"focus\": gemini_advice.focus, \"recommended_capability\": gemini_advice.recommended_capability, \"notes\": list(gemini_advice.notes)} if gemini_advice else {}, ensure_ascii=True)}"
+                "Do not execute tools.\\n\\nLOCAL DRAFT:\\n" + local_text[:18000] +
+                "\\n\\nGEMINI ADVISORY:\\n" + json.dumps(advice_payload, ensure_ascii=True)
             )
             profile = decision.profile or Altar1RequestProfile("altar1_review", 0.08, 2800, 0.90)
             try:
@@ -317,11 +328,7 @@ class LLMRouter:
 
         final_text = local_text
         if gemini_advice is not None or altar_review is not None:
-            sections = [
-                user_prompt,
-                "",
-                "BELTU REVIEW PASS - LOCAL OPERATOR IS FINAL AUTHORITY.",
-            ]
+            sections = [user_prompt, "", "BELTU REVIEW PASS - LOCAL OPERATOR IS FINAL AUTHORITY."]
             if gemini_advice is not None:
                 sections.extend([
                     "Gemini cloud advisory (sanitized and untrusted):",
@@ -336,12 +343,12 @@ class LLMRouter:
                 ])
             if altar_review is not None:
                 sections.extend(["Altar-1 local deep review:", altar_review[:16000]])
-            sections.append("Choose the final BELTU hypotheses and actions yourself. Reviewers provide advice only.")
+            sections.append("Choose the final BELTU hypotheses and actions yourself. Reviewers only provide advisory evidence.")
             try:
                 if not isinstance(self.standard_provider, DisabledLLMProvider):
                     final_text, final_latency = self.standard_provider.complete(
                         system_prompt=system_prompt,
-                        user_prompt="\n".join(sections),
+                        user_prompt="\\n".join(sections),
                     )
                     latency += final_latency
                     trace["final_local_pass"] = True
@@ -349,12 +356,13 @@ class LLMRouter:
                 trace["final_local_pass"] = False
                 trace["final_local_error"] = str(exc)[:500]
 
-        trace["latency_ms"] = round(latency + gemini_latency + altar_latency, 2)
+        total_latency = latency + gemini_latency + altar_latency
+        trace["latency_ms"] = round(total_latency, 2)
         self.last_advice = gemini_advice
         self.last_trace = trace
         return RoutedCompletion(
             final_text,
-            round(latency + gemini_latency + altar_latency, 2),
+            round(total_latency, 2),
             provider_name,
             model,
             decision,
