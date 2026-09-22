@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 from beltu.execution.capability_dispatcher import CapabilityDispatcher
 from beltu.execution.models import ExecutionRequest, ExecutionResult
 from beltu.control.approval_service import ApprovalService
@@ -9,7 +7,7 @@ from beltu.storage.repositories.decision_repository import DecisionRepository
 
 
 class ExecutionService:
-    """Turns an approved declarative decision into a persisted scheduler task."""
+    """Turn a validated decision into a persisted execution request."""
 
     def __init__(self, decisions: DecisionRepository, dispatcher: CapabilityDispatcher, approvals: ApprovalService | None = None) -> None:
         self.decisions = decisions
@@ -20,13 +18,16 @@ class ExecutionService:
         decision = self.decisions.get(decision_id)
         if decision is None:
             raise KeyError(f"Decision #{decision_id} not found")
+        approval_verified = False
         if decision.requires_approval:
             if decision.status != "approved":
                 raise PermissionError(f"Decision #{decision_id} requires explicit approval")
             if self.approvals is None or not self.approvals.has_valid_approved_decision(decision.id):
                 raise PermissionError(f"Decision #{decision_id} has no validated approval")
+            approval_verified = True
         elif decision.status not in {"accepted", "queued"}:
             raise ValueError(f"Decision #{decision_id} is not executable from status {decision.status!r}")
+
         payload = dict(decision.action_payload)
         target = str(payload.pop("target", "")).strip()
         if not target:
@@ -37,16 +38,23 @@ class ExecutionService:
         allowed_by_action = {
             "surface_inventory": {"asset.discovery.subdomains"},
             "service_enrichment": {"service.discovery"},
-            "endpoint_mapping": {"web.verify"},
+            "endpoint_mapping": {"web.verify", "browser.automation", "http.workflow"},
             "api_analysis": {"web.verify", "offline.api.structure_analysis"},
-            "auth_analysis": {"web.verify", "offline.auth.surface_analysis"},
-            "access_control_analysis": {"web.verify", "offline.access_control.surface_analysis"},
-            "business_logic_analysis": {"web.verify", "offline.business_logic.workflow_analysis"},
-            "finding_validation": {"web.vulnerability_detection", "offline.finding.validation"},
+            "auth_analysis": {"web.verify", "offline.auth.surface_analysis", "session.replay", "browser.automation"},
+            "access_control_analysis": {"web.verify", "offline.access_control.surface_analysis", "authorization.interactive"},
+            "business_logic_analysis": {"web.verify", "offline.business_logic.workflow_analysis", "business_logic.workflow"},
+            "finding_validation": {"web.vulnerability_detection", "offline.finding.validation", "api.manipulation"},
+            "browser_automation": {"browser.automation"},
+            "http_workflow": {"http.workflow"},
+            "session_replay": {"session.replay"},
+            "api_manipulation": {"api.manipulation"},
+            "authorization_testing": {"authorization.interactive"},
+            "business_logic_workflow": {"business_logic.workflow"},
+            "race_condition_testing": {"race_condition.test"},
         }
         if capability not in allowed_by_action.get(decision.action_kind, set()):
             raise ValueError(f"Capability {capability!r} is incompatible with action {decision.action_kind!r}")
-        return ExecutionRequest(decision.scan_id, target, capability, payload)
+        return ExecutionRequest(decision.scan_id, target, capability, payload, approval_verified=approval_verified)
 
     @staticmethod
     def _map_action(action_kind: str) -> str:
@@ -59,6 +67,13 @@ class ExecutionService:
             "access_control_analysis": "web.verify",
             "business_logic_analysis": "web.verify",
             "finding_validation": "web.vulnerability_detection",
+            "browser_automation": "browser.automation",
+            "http_workflow": "http.workflow",
+            "session_replay": "session.replay",
+            "api_manipulation": "api.manipulation",
+            "authorization_testing": "authorization.interactive",
+            "business_logic_workflow": "business_logic.workflow",
+            "race_condition_testing": "race_condition.test",
         }
         try:
             return mapping[action_kind]
