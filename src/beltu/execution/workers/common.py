@@ -76,10 +76,10 @@ def extract_dotted(value: Any, path: str) -> Any:
 def redact_text(value: str) -> str:
     text = str(value)
     patterns = (
-        (re.compile(r"(?i)(authorization\\s*:\\s*)([^\\r\\n]+)"), r"\\1<REDACTED>"),
-        (re.compile(r"(?i)(cookie\\s*:\\s*)([^\\r\\n]+)"), r"\\1<REDACTED>"),
-        (re.compile(r"(?i)(set-cookie\\s*:\\s*)([^\\r\\n]+)"), r"\\1<REDACTED>"),
-        (re.compile(r"(?i)\\b(bearer|token|api[_-]?key|secret)[=:]\\s*[A-Za-z0-9._~+/=-]{8,}"), r"\\1=<REDACTED>"),
+        (re.compile(r"(?i)(authorization\s*:\s*)([^\r\n]+)"), r"\1<REDACTED>"),
+        (re.compile(r"(?i)(cookie\s*:\s*)([^\r\n]+)"), r"\\1<REDACTED>"),
+        (re.compile(r"(?i)(set-cookie\s*:\s*)([^\r\n]+)"), r"\\1<REDACTED>"),
+        (re.compile(r"(?i)\b(bearer|token|api[_-]?key|secret)[=:]\s*[A-Za-z0-9._~+/=-]{8,}"), r"\\1=<REDACTED>"),
     )
     for pattern, replacement in patterns:
         text = pattern.sub(replacement, text)
