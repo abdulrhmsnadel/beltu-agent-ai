@@ -223,8 +223,28 @@ class LLMRouter:
             confidence = 0.5
         reason = str(payload.get("reason", "")).strip()[:1200]
         focus = str(payload.get("focus", "")).strip()[:600]
+        allowed_capabilities = {
+            "asset.discovery.subdomains",
+            "service.discovery",
+            "web.verify",
+            "browser.automation",
+            "http.workflow",
+            "session.replay",
+            "api.manipulation",
+            "authorization.interactive",
+            "business_logic.workflow",
+            "race_condition.test",
+            "offline.api.structure_analysis",
+            "offline.auth.surface_analysis",
+            "offline.access_control.surface_analysis",
+            "offline.authorization.matrix_analysis",
+            "offline.business_logic.workflow_analysis",
+            "offline.finding.validation",
+        }
         recommended = payload.get("recommended_capability")
         recommended_capability = str(recommended).strip()[:160] if recommended else None
+        if recommended_capability not in allowed_capabilities:
+            recommended_capability = None
         raw_notes = payload.get("notes", [])
         notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
         return GeminiAdvice(decision, confidence, reason, focus, recommended_capability, notes)
