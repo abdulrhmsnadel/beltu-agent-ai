@@ -325,7 +325,7 @@ The router also selects a per-task request profile so decoding parameters can ch
 
 ## Important: Altar-1 is optional
 
-The public Altar-1 model is extremely large. Its model card describes a 504B-parameter pruned model at about **328 GB INT4/W4A16**, with a documented vLLM configuration using **4× NVIDIA H200**. citeturn710406search0
+The public Altar-1 model is extremely large. Its model card describes a 504B-parameter pruned model at about **328 GB INT4/W4A16**, with a documented vLLM configuration using **4× NVIDIA H200**.
 
 For that reason:
 
@@ -717,7 +717,6 @@ data/
 ```
 
 Do not commit:
-
 - credentials
 - access tokens
 - model weights
