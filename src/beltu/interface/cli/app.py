@@ -77,7 +77,16 @@ from beltu.brain.hypothesis_engine import HeuristicHypothesisEngine
 from beltu.brain.planner import Planner
 from beltu.brain.prioritizer import HypothesisPrioritizer
 from beltu.brain.reasoning_engine import HybridReasoningEngine
-from beltu.brain.llm import Altar1LocalProvider, DisabledLLMProvider, FreeTokenLocalProvider, LLMConfig, LLMReasoningEngine, LLMRouter, OpenAICompatibleProvider
+from beltu.brain.llm import (
+    Altar1LocalProvider,
+    DisabledLLMProvider,
+    FreeTokenLocalProvider,
+    GeminiCloudProvider,
+    LLMConfig,
+    LLMReasoningEngine,
+    LLMRouter,
+    OpenAICompatibleProvider,
+)
 from beltu.version import __version__
 from beltu.release.audit import run_audit
 from beltu.reporting.engine import ReportEngine
@@ -212,9 +221,11 @@ def build_components():
     llm_config = LLMConfig.from_project(Path.cwd())
     standard_provider = FreeTokenLocalProvider(llm_config) if llm_config.enabled else DisabledLLMProvider()
     altar_provider = Altar1LocalProvider(llm_config) if llm_config.altar_enabled else DisabledLLMProvider()
+    gemini_provider = GeminiCloudProvider(llm_config) if llm_config.gemini_enabled else DisabledLLMProvider()
     llm_router = LLMRouter(
         standard_provider=standard_provider,
         altar_provider=altar_provider,
+        gemini_provider=gemini_provider,
         enabled=llm_config.router_enabled,
     )
     llm_reasoner = LLMReasoningEngine(Path.cwd(), llm_config, llm_router)
