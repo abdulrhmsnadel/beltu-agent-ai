@@ -41,6 +41,7 @@ class ReleaseAudit:
         llm_cfg = brain.get("llm") or {}
         llm_provider = str(llm_cfg.get("provider", ""))
         llm_url = str(llm_cfg.get("base_url", ""))
+        gemini_cfg = llm_cfg.get("gemini") or {}
         llm_local_only = bool(llm_cfg.get("local_only", False))
         llm_key_required = bool(llm_cfg.get("api_key_required", False))
         wa = bool((notifications.get("whatsapp") or {}).get("enabled", False))
@@ -57,6 +58,35 @@ class ReleaseAudit:
         loopback_host = (urlparse(llm_url).hostname or "").lower()
         local_llm_safe = (not llm) or (llm_provider == "freetoken_local" and llm_local_only and loopback_host in {"127.0.0.1", "localhost", "::1"} and not llm_key_required)
         checks.append(AuditCheck("llm_local_only", local_llm_safe, f"provider={llm_provider!r} base_url={llm_url!r}"))
+        gemini_enabled = bool(gemini_cfg.get("enabled", False))
+        gemini_scrub = bool(gemini_cfg.get("scrub_before_send", False))
+        gemini_key_env = str(gemini_cfg.get("api_key_env", ""))
+        gemini_model = str(gemini_cfg.get("model", ""))
+        gemini_forbidden = any(bool(gemini_cfg.get(name, True)) for name in (
+            "allow_final_reports", "allow_exploit_payloads", "allow_poc_code",
+            "allow_session_data", "allow_credentials",
+        ))
+        gemini_cfg_safe = (
+            (not gemini_enabled)
+            or (
+                gemini_scrub
+                and gemini_key_env == "GEMINI_API_KEY"
+                and bool(gemini_model)
+                and not gemini_forbidden
+                and "api_key" not in gemini_cfg
+            )
+        )
+        checks.append(AuditCheck(
+            "gemini_privacy_boundary",
+            gemini_cfg_safe,
+            f"enabled={gemini_enabled}; scrub_before_send={gemini_scrub}; model={gemini_model!r}; "
+            f"forbidden_flags_enabled={gemini_forbidden}",
+        ))
+        checks.append(AuditCheck(
+            "gemini_key_env_only",
+            (not gemini_enabled) or gemini_key_env == "GEMINI_API_KEY",
+            f"api_key_env={gemini_key_env!r}; key material must remain outside repository config",
+        ))
         checks.append(AuditCheck("whatsapp_default_off", not wa, f"whatsapp.enabled={wa}"))
         checks.append(AuditCheck("remote_defaults_to_loopback", host in {"127.0.0.1", "localhost", "::1"}, f"remote.host={host!r}"))
         checks.append(AuditCheck("cors_not_wildcard", "*" not in cors, f"cors_origins={cors!r}"))
