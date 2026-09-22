@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -249,8 +250,7 @@ class FakeProcessManager:
         return ProcessResult(tuple(argv), 0, "", "", 0.01, False, None, None)
 
 
-@pytest.mark.asyncio
-async def test_dispatcher_accepts_verified_approval_and_rejects_unverified(tmp_path: Path):
+def test_dispatcher_accepts_verified_approval_and_rejects_unverified(tmp_path: Path):
     db = Database(tmp_path / "beltu.db")
     db.initialize()
     target = TargetRepository(db).add("example.com")
@@ -273,10 +273,10 @@ async def test_dispatcher_accepts_verified_approval_and_rejects_unverified(tmp_p
     )
     request = ExecutionRequest(scan.id, "example.com", "http.workflow")
     with pytest.raises(PermissionError):
-        await dispatcher.execute(request)
+        asyncio.run(dispatcher.execute(request))
 
     approved = ExecutionRequest(scan.id, "example.com", "http.workflow", approval_verified=True)
-    result = await dispatcher.execute(approved)
+    result = asyncio.run(dispatcher.execute(approved))
     assert result.succeeded
     assert result.tool == "fixture-http"
     assert result.observations[0]["kind"] == "http.response"
