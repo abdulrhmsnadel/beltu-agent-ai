@@ -1,104 +1,400 @@
 # BELTU 1.2.0 — Multi-Model Local Security Agent
 
-BELTU is a local-first agentic security-testing platform for explicitly authorized bug-bounty, lab, and red-team assessments. It maintains persistent scan state, builds context from observations and evidence, reasons over hypotheses, selects capabilities, applies scope/approval/resource gates, executes allowlisted tooling, correlates evidence, validates findings, and generates reports.
+BELTU is a **local-first agentic security-testing platform** for explicitly authorized bug-bounty, lab, and red-team assessments. It keeps persistent scan state, builds context from observations and evidence, generates hypotheses, plans next actions, selects capabilities, applies scope/policy/approval/resource gates, executes allowlisted security tooling, correlates evidence, validates findings, and generates reports.
 
-## What's new in 1.2.0
+> **Authorized use only.** Run BELTU only against systems you own or have explicit permission to assess. Respect program scope, rate limits, terms, and applicable law.
 
-BELTU adds a multi-model local reasoning layer.
+---
 
-- **Standard local model:** general reasoning, reconnaissance, mapping, and tool-output interpretation.
-- **Altar-1 local model:** optional specialist for code review, exploit-proof/reproduction analysis, and authorization-matrix anomaly verification.
-- **Dynamic router:** classifies the current AgentContext and selects the provider for the reasoning cycle.
-- **VRAM governor:** detects active Altar-1 work and aggressively reduces external-tool concurrency and threading.
-- **Activity leases:** expose Altar-1 request activity to the resource governor even when the serving backend does not provide compatible request statistics.
+## What BELTU actually does
 
-The models are reasoning components, not unrestricted command runners. Proposed actions still pass through BELTU scope, policy, approval, capability, evidence, and resource controls.
-
-## Agent flow
+BELTU is built as a closed feedback loop rather than a fixed scanner pipeline:
 
 ```text
-Authorized target
-      |
-      v
+Target
+  ↓
+Scope validation
+  ↓
 Persistent scan state
-      |
-      v
-Observe -> Context Build -> Hypothesize -> Plan
-      |                              |
-      |                              v
-      |                       Multi-Model Router
-      |                         /           \
-      v                        v             v
-Evidence / Graph       Standard Local    Altar-1 Local
-      |                        |              |
-      +------------------------+--------------+
-                               |
-                               v
-                     Structured reasoning result
-                               |
-                       Scope / Policy / Approval
-                               |
-                               v
-                        Capability execution
-                               |
-                               v
-                       Evidence -> Findings
-                               |
-                               v
-                          Re-evaluate
+  ↓
+Observe
+  ↓
+Build context
+  ↓
+Hypotheses
+  ↓
+Reasoning
+  ↓
+Plan
+  ↓
+Policy / Approval / Resource gates
+  ↓
+Capability execution
+  ↓
+Evidence collection
+  ↓
+Finding correlation / validation
+  ↓
+Re-evaluate
+  ↓
+Re-plan
 ```
 
-## Routing
+The language model is a **reasoning component**, not an unrestricted shell runner. The model can propose structured hypotheses and actions, but BELTU's scope, policy, approval, capability, and resource layers decide whether an action is allowed to execute.
 
-The router is deterministic and context-driven.
+---
 
-**Standard route**
+# Installation
+
+## 1. Supported environment
+
+BELTU's core runtime is intended for:
+
+- Kali Linux
+- Ubuntu
+- Other Linux environments with Python 3.11+
+
+Required base tools:
+
+- Python 3.11+
+- Git
+- pip / venv
+- curl
+- unzip
+
+Optional security tools are installed separately when you enable the corresponding capabilities.
+
+---
+
+## 2. Clone BELTU
+
+```bash
+git clone https://github.com/abdulrhmsnadel/beltu-agent-ai.git
+cd beltu-agent-ai
+```
+
+If you already downloaded the source archive:
+
+```bash
+unzip BELTU-1.2.0-source.zip
+cd BELTU-1.2.0
+```
+
+---
+
+## 3. Create the Python environment
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m ensurepip --upgrade
+python -m pip install --upgrade pip setuptools wheel
+```
+
+---
+
+## 4. Install BELTU
+
+Recommended editable install for development:
+
+```bash
+python -m pip install -e .
+```
+
+For an environment where you already installed the required dependencies and want to avoid build isolation/network resolution:
+
+```bash
+python -m pip install -e . --no-deps --no-build-isolation
+```
+
+Check the CLI:
+
+```bash
+beltu --help
+beltu status
+```
+
+You should see BELTU 1.2.0 in the status output after installation.
+
+---
+
+# First-time configuration
+
+## 5. Run the security/installation audit
+
+```bash
+beltu doctor --strict
+```
+
+The release is intentionally conservative:
+
+- scope is default-deny
+- high-risk actions require approval
+- external tool autonomy is disabled by default
+- local inference is loopback-only
+- remote operations bind to loopback by default
+- secrets, runtime databases, evidence, and model weights are not meant to be committed
+
+Fix any FAIL reported by `doctor --strict` before a real engagement.
+
+---
+
+## 6. Configure the target scope
+
+Edit:
+
+```text
+config/scope.yaml
+```
+
+Example:
+
+```yaml
+targets:
+  - your-authorized-domain.example
+```
+
+Only place domains/assets that you are explicitly authorized to assess in this file.
+
+You can validate/register a target with:
+
+```bash
+beltu target your-authorized-domain.example
+```
+
+---
+
+## 7. Configure execution
+
+The default repository configuration keeps external tool autonomy off:
+
+```yaml
+execution:
+  external_tools_enabled: false
+```
+
+Keep this disabled while testing the agent core.
+
+When working on an explicitly authorized target and you are ready to allow BELTU to schedule the registered tools, change it to:
+
+```yaml
+execution:
+  external_tools_enabled: true
+```
+
+High-risk operations remain approval-gated.
+
+---
+
+# Basic usage
+
+## A. Register a target
+
+```bash
+beltu target your-authorized-domain.example
+```
+
+This validates the target against the configured scope and stores it in BELTU's persistent state.
+
+---
+
+## B. Start an autonomous hunt
+
+```bash
+beltu hunt your-authorized-domain.example
+```
+
+A hunt creates/continues persistent scan state and lets the agent reason over observations, hypotheses, capabilities, and previous scan state.
+
+Use only an explicitly authorized target.
+
+---
+
+## C. Inspect the agent
+
+```bash
+beltu status
+beltu resources
+beltu llm
+beltu tools
+```
+
+These show the current scan state, resource pressure, local model state, and registered tools.
+
+---
+
+# How the agent works during a hunt
+
+A typical reasoning cycle is:
+
+### 1. Observe
+
+BELTU receives output/observations from enabled capabilities and stored intelligence.
+
+Examples:
+
+```text
+Asset discovered
+HTTP service detected
+Endpoint discovered
+API relation identified
+Authentication boundary observed
+Authorization anomaly observed
+Business workflow state observed
+```
+
+### 2. Build context
+
+The Context Builder combines current observations with persistent state, hypotheses, attack-surface intelligence, API intelligence, authentication data, authorization data, business-logic data, and existing findings.
+
+### 3. Generate hypotheses
+
+The reasoning layer asks:
+
+```text
+What is known?
+What is uncertain?
+What evidence is missing?
+What capability can reduce that uncertainty?
+What should be tested next?
+```
+
+### 4. Select the next capability
+
+The Capability Registry and Intelligent Capability Selector turn the reasoning result into a candidate structured action.
+
+The action still has to pass:
+
+```text
+Scope
+ ↓
+Policy
+ ↓
+Approval (when required)
+ ↓
+Resource Governor
+ ↓
+Execution
+```
+
+### 5. Execute and capture evidence
+
+BELTU records tool output, process state, timing, return codes, observations, and evidence references.
+
+### 6. Re-evaluate
+
+The feedback loop uses the new observations to update hypotheses and generate the next reasoning cycle instead of blindly following a fixed list of steps.
+
+---
+
+# Multi-model local brain — v1.2.0
+
+BELTU 1.2.0 adds a deterministic **Multi-Model LLM Router**.
+
+```text
+                    AgentContext
+                         ↓
+                  Dynamic LLM Router
+                     /         \
+                    /           \
+                   ↓             ↓
+          Standard local      Altar-1 local
+             :8000/v1            :8001/v1
+```
+
+## Standard local model
+
+The standard local model handles general reasoning such as:
+
 - reconnaissance
 - asset/service mapping
 - endpoint discovery
-- normal tool output
-- generic scan-cycle reasoning
+- ordinary tool-output parsing
+- general scan-cycle reasoning
 
-**Altar-1 route**
-- source/code review
+## Altar-1 local specialist
+
+When enabled, Altar-1 is selected for specialized contexts such as:
+
+- source-code review
 - static security analysis
-- exploit-proof / proof-of-concept / reproduction analysis
+- exploit-proof / reproduction analysis
 - authorization/access-control/permission matrix anomaly verification
 
-For specialized requests BELTU selects a profile that can adjust temperature, token budget, and `top_p` without changing the serving node.
+The router also selects a per-task request profile so decoding parameters can change without changing the model node.
 
-## Resource protection
+## Important: Altar-1 is optional
 
-While an Altar-1 request is active, BELTU:
-- clamps managed tool thread limits to 1
-- clamps managed external-tool parallelism to the configured minimum
-- can restrict managed child processes to one CPU where Linux affinity is available
-- records Altar-1 activity and GPU-memory telemetry where the relevant process information is available
+The public Altar-1 model is extremely large. Its model card describes a 504B-parameter pruned model at about **328 GB INT4/W4A16**, with a documented vLLM configuration using **4× NVIDIA H200**. citeturn710406search0
 
-## Altar-1 deployment
+For that reason:
 
-Aikido announced Altar on September 21, 2026 as an open-weight security model for sovereign/on-prem security intelligence. The public model card describes the 504B-parameter pruned model at about 328 GB INT4/W4A16 and documents vLLM/SGLang serving on 4× NVIDIA H200.
+- Altar-1 is disabled by default.
+- BELTU does not automatically download its weights.
+- The provider is loopback-only when local-only mode is enabled.
+- A machine that cannot actually host the checkpoint should not be configured as an Altar-1 node.
 
-Model card:
+Official model card:
+
 https://huggingface.co/AikidoSec/altar-1
 
-Announcement:
-https://www.aikido.dev/blog/aikido-altar-open-weight-ai-sovereign-security
+---
 
-BELTU keeps Altar-1 disabled by default and loopback-only when enabled.
+# Local standard model — FreeToken
 
-## Configuration
+BELTU can use a local FreeToken-compatible inference service.
 
-Default:
+The project configuration expects:
+
+```text
+http://127.0.0.1:8000/v1
+```
+
+Install the local FreeToken environment with:
+
+```bash
+scripts/install_local_ai.sh
+```
+
+That script prepares the FreeToken checkout/virtual environment but does **not** download a model for you.
+
+Point BELTU to a local model directory:
+
+```bash
+export BELTU_FREETOKEN_MODEL=/absolute/path/to/local/model
+```
+
+Then start it:
+
+```bash
+scripts/start_local_ai.sh
+```
+
+Verify the local service:
+
+```bash
+curl http://127.0.0.1:8000/v1/models
+```
+
+Inspect BELTU's view of the provider:
+
+```bash
+beltu llm
+```
+
+The standard provider stays local; BELTU's default configuration does not require an OpenAI/Claude/Gemini API key.
+
+---
+
+# Altar-1 setup
+
+Altar-1 is a separate local specialist node.
+
+Default configuration:
 
 ```yaml
 brain:
-  llm_enabled: true
   llm:
-    provider: freetoken_local
-    base_url: http://127.0.0.1:8000/v1
-    model: auto
-    local_only: true
     routing:
       enabled: true
     altar1:
@@ -108,7 +404,7 @@ brain:
       local_only: true
 ```
 
-Enable only after the local specialist node is available:
+Enable it only after the actual local Altar-1 server is available:
 
 ```yaml
 brain:
@@ -117,56 +413,531 @@ brain:
       enabled: true
 ```
 
-There is no cloud fallback for Altar-1. Normal deterministic heuristic fallback remains available when configured.
-
-## Running
-
-Standard local engine:
-
-```bash
-scripts/start_local_ai.sh
-```
-
-Altar-1 specialist:
+Then:
 
 ```bash
 scripts/start_altar1.sh
 ```
 
-Stop:
+Stop it with:
 
 ```bash
 scripts/stop_altar1.sh
 ```
 
-Inspect:
+The included launcher is a local orchestration helper; you still need the Altar-1 serving stack and model weights on the machine. The public model card documents:
 
 ```bash
-beltu llm
-beltu resources
-beltu doctor --strict
+vllm serve aikido/altar-1 --tensor-parallel-size 4 --trust-remote-code --max-model-len 131072
 ```
 
-## Mobile Command Center
+citeturn710406search0
 
-The Flutter client connects to the authenticated BELTU Remote Operations gateway and exposes dashboard, agent chat, approvals, activity, files, and reports.
+---
+
+# VRAM protection
+
+When an Altar-1 request is active, the Resource Governor aggressively reduces the amount of concurrent external work.
+
+```text
+Altar-1 ACTIVE
+     ↓
+Tool thread limit = 1
+     ↓
+Parallel external processes = minimum
+     ↓
+Managed child CPU affinity = one CPU when available
+```
+
+BELTU also tracks an activity lease under:
+
+```text
+data/runtime/altar1.active/
+```
+
+This lets the governor detect active specialist work even if the serving backend does not expose compatible request telemetry.
+
+NVIDIA telemetry is used when `nvidia-smi` is available.
+
+---
+
+# Tooling
+
+The core package does not require every security tool just to start BELTU.
+
+Registered capability adapters currently include:
+
+| Tool | Main capability |
+|---|---|
+| Subfinder | passive subdomain discovery |
+| Assetfinder | passive asset discovery |
+| Amass | passive asset/DNS enrichment |
+| HTTPX | HTTP service verification |
+| Nmap | service discovery |
+| Nuclei | template-based candidate detection |
+
+Install only the tools you need and keep them within the scope of your authorized engagement.
+
+For example, on Kali/Debian-based systems:
+
+```bash
+sudo apt update
+sudo apt install -y nmap
+```
+
+For ProjectDiscovery and other third-party tools, use their official installation instructions so you receive the correct current binary for your platform.
+
+---
+
+# Useful CLI commands
+
+## Target and scan lifecycle
+
+```bash
+beltu target <domain>
+beltu targets
+beltu hunt <domain>
+
+beltu list
+beltu start <target-id>
+beltu think <scan-id>
+beltu observe <scan-id> --kind <kind> --subject <subject>
+beltu replan <scan-id>
+beltu cycles <scan-id>
+beltu evidence <scan-id>
+```
+
+## Findings and validation
+
+```bash
+beltu findings <scan-id>
+beltu finding-validation <scan-id>
+beltu finding-context <scan-id>
+```
+
+## Intelligence
+
+```bash
+beltu asset-inventory <scan-id>
+beltu asset-graph <scan-id>
+beltu surface-rank <scan-id>
+beltu surface <scan-id>
+
+beltu api-inventory <scan-id>
+beltu api-relations <scan-id>
+beltu api-context <scan-id>
+
+beltu auth-inventory <scan-id>
+beltu auth-boundaries <scan-id>
+beltu auth-context <scan-id>
+
+beltu authz-inventory <scan-id>
+beltu authz-anomalies <scan-id>
+beltu authz-context <scan-id>
+
+beltu business-workflows <scan-id>
+beltu business-anomalies <scan-id>
+beltu business-context <scan-id>
+```
+
+## Capability and decision state
+
+```bash
+beltu capability-rank <scan-id>
+beltu capability-history <scan-id>
+beltu observation-links <scan-id>
+beltu decision-execute <decision-id>
+```
+
+## Reports
+
+```bash
+beltu report <scan-id>
+beltu report-list <scan-id>
+```
+
+## Approvals
+
+```bash
+beltu request ...
+beltu list
+beltu approve <approval-id>
+beltu reject <approval-id>
+```
+
+Use the exact subcommand help for argument details:
+
+```bash
+beltu --help
+beltu <command> --help
+```
+
+---
+
+# Authentication / approvals
+
+High-risk actions require a validated approval record.
+
+This means the LLM or planner cannot directly bypass the approval system.
+
+The control flow is:
+
+```text
+Reasoning result
+      ↓
+Structured decision
+      ↓
+Approval service
+      ↓
+Capability dispatcher
+      ↓
+Resource governor
+      ↓
+Execution
+```
+
+Use:
+
+```bash
+beltu approval --help
+```
+
+to inspect approval commands in your installed build.
+
+---
+
+# Remote operations
+
+BELTU includes an authenticated Remote Operations gateway for the mobile command center and remote control integrations.
+
+By default it is designed for loopback operation.
+
+Set credentials locally in your shell — do **not** put them in Git:
+
+```bash
+export BELTU_REMOTE_USER="your-local-username"
+
+read -s BELTU_REMOTE_PASSWORD
+export BELTU_REMOTE_PASSWORD
+
+export BELTU_REMOTE_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+```
+
+Then validate the configuration:
+
+```bash
+beltu remote-doctor
+```
+
+Start the gateway:
+
+```bash
+beltu remote
+```
+
+The gateway listens on the configured local address/port. Do not expose it to the public internet without deliberately designing and securing the deployment.
+
+---
+
+# Mobile Command Center
+
+The mobile application is a Flutter client for the BELTU Remote Operations API.
+
+It is a control surface, not the security engine itself.
+
+```text
+Android / iOS client
+        ↓
+Authenticated Remote Gateway
+        ↓
+BELTU Agent
+        ↓
+Brain / Execution / Evidence / Reports
+```
+
+## Build on Android
+
+Requirements:
+
+- Flutter SDK
+- Android Studio
+- Android SDK
+- adb
+- Android device or emulator
+
+From the repository:
 
 ```bash
 cd mobile
 flutter pub get
+```
+
+For an Android emulator using a host-side BELTU gateway:
+
+```bash
 flutter run --dart-define=BELTU_BASE_URL=http://10.0.2.2:8765
 ```
 
-## Safety
+For a physical Android device connected over USB, you can use ADB reverse port forwarding after the gateway is running:
 
-Run BELTU only against targets you own or are explicitly authorized to assess. Defaults include:
-- default-deny scope
-- approval-gated high-risk actions
-- external tools disabled until explicitly enabled
-- loopback-only local inference
-- authenticated loopback remote operations
-- runtime secrets, evidence, databases, and model weights excluded from Git
+```bash
+adb reverse tcp:8765 tcp:8765
+flutter run --dart-define=BELTU_BASE_URL=http://127.0.0.1:8765
+```
 
-## Version
+---
 
-**1.2.0**
+# Workspace and stored state
+
+BELTU keeps runtime artifacts in the project data tree.
+
+Important locations include:
+
+```text
+data/
+├── beltu.db
+├── evidence/
+└── runtime/
+    ├── freetoken.pid
+    ├── freetoken.log
+    └── altar1.active/
+```
+
+Do not commit:
+
+- credentials
+- access tokens
+- model weights
+- runtime databases
+- evidence from private engagements
+- generated reports containing sensitive data
+
+The repository includes Git ignore rules for runtime material.
+
+---
+
+# Typical operator workflow
+
+For a normal authorized engagement:
+
+### Phase 1 — Prepare
+
+```bash
+cd beltu-agent-ai
+source .venv/bin/activate
+beltu doctor --strict
+```
+
+### Phase 2 — Scope
+
+Edit `config/scope.yaml` and add only the authorized target.
+
+### Phase 3 — Register
+
+```bash
+beltu target target.example
+```
+
+### Phase 4 — Start reasoning
+
+```bash
+beltu hunt target.example
+```
+
+### Phase 5 — Monitor
+
+```bash
+beltu status
+beltu resources
+beltu llm
+```
+
+### Phase 6 — Inspect intelligence
+
+Use the asset/API/auth/authz/business-logic commands for the scan ID shown by BELTU.
+
+### Phase 7 — Validate
+
+Inspect findings and run the applicable validation workflow. High-risk execution remains approval-gated.
+
+### Phase 8 — Report
+
+```bash
+beltu report <scan-id>
+beltu report-list <scan-id>
+```
+
+---
+
+# Troubleshooting
+
+## `beltu: command not found`
+
+Activate the virtual environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Or verify the editable install:
+
+```bash
+python -m pip show beltu
+```
+
+---
+
+## `FreeToken is unreachable`
+
+Check:
+
+```bash
+beltu llm
+curl http://127.0.0.1:8000/v1/models
+```
+
+Then start:
+
+```bash
+scripts/start_local_ai.sh
+```
+
+---
+
+## `Altar-1 is unreachable`
+
+Check:
+
+```bash
+curl http://127.0.0.1:8001/v1/models
+```
+
+Make sure the Altar-1 server is actually running and that:
+
+```yaml
+brain:
+  llm:
+    altar1:
+      enabled: true
+```
+
+matches the running configuration.
+
+---
+
+## Remote gateway says authentication is not configured
+
+Set the credentials in the same shell that starts the gateway:
+
+```bash
+export BELTU_REMOTE_USER="your-local-username"
+read -s BELTU_REMOTE_PASSWORD
+export BELTU_REMOTE_PASSWORD
+export BELTU_REMOTE_SECRET="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+
+beltu remote-doctor
+beltu remote
+```
+
+---
+
+## Doctor reports Git/runtime issues
+
+Run:
+
+```bash
+beltu doctor --strict
+```
+
+Fix the specific FAIL entries rather than bypassing the audit.
+
+---
+
+# Development and tests
+
+Run the complete Python test suite from the repository root:
+
+```bash
+source .venv/bin/activate
+python -m pytest -q
+```
+
+Run Python syntax compilation:
+
+```bash
+python -m compileall -q src
+```
+
+The 1.2.0 multi-model coverage is under:
+
+```text
+tests/stage22/test_stage22_multi_model.py
+```
+
+---
+
+# Repository structure
+
+```text
+beltu-agent-ai/
+├── config/
+│   ├── agent.yaml
+│   ├── scope.yaml
+│   └── tools.yaml
+├── docs/
+├── mobile/
+├── prompts/
+├── scripts/
+│   ├── install.sh
+│   ├── install_local_ai.sh
+│   ├── start_local_ai.sh
+│   ├── start_altar1.sh
+│   ├── stop_altar1.sh
+│   └── release.sh
+├── src/
+│   └── beltu/
+│       ├── brain/
+│       ├── control/
+│       ├── execution/
+│       ├── interface/
+│       ├── integrations/
+│       ├── reporting/
+│       └── storage/
+└── tests/
+```
+
+---
+
+# Security model
+
+BELTU's architectural security boundary is:
+
+```text
+LLM
+ ↓
+Structured reasoning
+ ↓
+Scope guard
+ ↓
+Policy
+ ↓
+Approval gate
+ ↓
+Capability registry
+ ↓
+Resource governor
+ ↓
+Process execution
+ ↓
+Evidence
+```
+
+The model is never the sole authority for execution.
+
+---
+
+# Version
+
+**BELTU 1.2.0**
+
+Standalone successor to the legacy `beltu-agent` repository.
