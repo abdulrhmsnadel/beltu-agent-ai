@@ -40,6 +40,9 @@ class GeminiAdvice:
     focus: str
     recommended_capability: str | None
     notes: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
+    alternative_hypotheses: tuple[str, ...] = ()
+    missing_evidence: tuple[str, ...] = ()
     status: str = "ok"
 
 
@@ -247,7 +250,23 @@ class LLMRouter:
             recommended_capability = None
         raw_notes = payload.get("notes", [])
         notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
-        return GeminiAdvice(decision, confidence, reason, focus, recommended_capability, notes)
+        raw_suggestions = payload.get("suggestions", [])
+        suggestions = tuple(str(item).strip()[:700] for item in raw_suggestions[:10] if str(item).strip()) if isinstance(raw_suggestions, list) else ()
+        raw_hypotheses = payload.get("alternative_hypotheses", [])
+        alternative_hypotheses = tuple(str(item).strip()[:700] for item in raw_hypotheses[:8] if str(item).strip()) if isinstance(raw_hypotheses, list) else ()
+        raw_missing = payload.get("missing_evidence", [])
+        missing_evidence = tuple(str(item).strip()[:500] for item in raw_missing[:10] if str(item).strip()) if isinstance(raw_missing, list) else ()
+        return GeminiAdvice(
+            decision,
+            confidence,
+            reason,
+            focus,
+            recommended_capability,
+            notes,
+            suggestions,
+            alternative_hypotheses,
+            missing_evidence,
+        )
 
     def _primary_local(self, *, decision: RouteDecision, system_prompt: str, user_prompt: str) -> tuple[str, float, str, str]:
         if not isinstance(self.standard_provider, DisabledLLMProvider):
@@ -327,6 +346,9 @@ class LLMRouter:
                     "focus": gemini_advice.focus,
                     "recommended_capability": gemini_advice.recommended_capability,
                     "notes": list(gemini_advice.notes),
+                    "suggestions": list(gemini_advice.suggestions),
+                    "alternative_hypotheses": list(gemini_advice.alternative_hypotheses),
+                    "missing_evidence": list(gemini_advice.missing_evidence),
                 }
             reviewer_prompt = (
                 "Review the local operator draft and Gemini advisory below. "
