@@ -196,6 +196,38 @@ class LLMRouter:
             reasons.append("general agent monitoring")
         return RouteDecision(route, round(score, 3), tuple(reasons), profile, gemini_mode)
 
+    @staticmethod
+    def _parse_gemini_advice(raw: str) -> GeminiAdvice:
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if len(lines) >= 3:
+                cleaned = "\n".join(lines[1:-1]).strip()
+        try:
+            payload = json.loads(cleaned)
+        except json.JSONDecodeError:
+            start, end = cleaned.find("{"), cleaned.rfind("}")
+            if start < 0 or end <= start:
+                raise ValueError("Gemini advisory response did not contain JSON")
+            payload = json.loads(cleaned[start:end + 1])
+        if not isinstance(payload, dict):
+            raise ValueError("Gemini advisory root must be an object")
+        allowed = {"continue", "retry", "correct", "escalate_to_deep_review", "stop_escalation", "observe"}
+        decision = str(payload.get("decision", "observe")).strip()
+        if decision not in allowed:
+            decision = "observe"
+        try:
+            confidence = max(0.0, min(1.0, float(payload.get("confidence", 0.5))))
+        except (TypeError, ValueError):
+            confidence = 0.5
+        reason = str(payload.get("reason", "")).strip()[:1200]
+        focus = str(payload.get("focus", "")).strip()[:600]
+        recommended = payload.get("recommended_capability")
+        recommended_capability = str(recommended).strip()[:160] if recommended else None
+        raw_notes = payload.get("notes", [])
+        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
+        return GeminiAdvice(decision, confidence, reason, focus, recommended_capability, notes)
+
     def complete_for_context(
         self,
         *,
