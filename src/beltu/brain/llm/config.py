@@ -9,13 +9,16 @@ from urllib.parse import urlparse
 import yaml
 
 
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
 @dataclass(frozen=True, slots=True)
 class LLMConfig:
-    """Reasoning configuration.
+    """BELTU local multi-model LLM configuration.
 
-    BELTU 1.1 defaults to a local FreeToken endpoint. The provider is deliberately
-    constrained to loopback so a malformed configuration cannot silently route
-    reasoning to a cloud endpoint.
+    The existing top-level fields remain the standard reasoning backend for
+    backward compatibility. v1.2 adds an optional Altar-1 local backend and a
+    deterministic router. Both local providers are loopback-only by default.
     """
 
     enabled: bool = True
@@ -36,9 +39,28 @@ class LLMConfig:
     system_prompt_path: str = "prompts/llm/system.md"
     reasoning_prompt_path: str = "prompts/llm/reasoning.md"
 
+    # v1.2 multi-model router.
+    router_enabled: bool = True
+    altar_enabled: bool = False
+    altar_base_url: str = "http://127.0.0.1:8001/v1"
+    altar_model: str = "aikido/altar-1"
+    altar_api_key_env: str = "BELTU_ALTAR1_API_KEY"
+    altar_api_key_required: bool = False
+    altar_use_json_mode: bool = False
+    altar_stream: bool = True
+    altar_local_only: bool = True
+    altar_timeout_seconds: float = 180.0
+    altar_max_tokens: int = 3200
+    altar_temperature: float = 0.1
+    altar_activity_dir: str = "data/runtime/altar1.active"
+
     @classmethod
     def from_mapping(cls, mapping: dict[str, Any]) -> "LLMConfig":
         data = mapping if isinstance(mapping, dict) else {}
+        altar = data.get("altar1", data.get("altar", {}))
+        altar = altar if isinstance(altar, dict) else {}
+        routing = data.get("routing", {})
+        routing = routing if isinstance(routing, dict) else {}
         return cls(
             enabled=bool(data.get("enabled", True)),
             provider=str(data.get("provider", "freetoken_local")),
@@ -57,16 +79,73 @@ class LLMConfig:
             max_actions=max(1, int(data.get("max_actions", 3))),
             system_prompt_path=str(data.get("system_prompt_path", "prompts/llm/system.md")),
             reasoning_prompt_path=str(data.get("reasoning_prompt_path", "prompts/llm/reasoning.md")),
+            router_enabled=bool(routing.get("enabled", data.get("router_enabled", True))),
+            altar_enabled=bool(altar.get("enabled", False)),
+            altar_base_url=str(altar.get("base_url", "http://127.0.0.1:8001/v1")).rstrip("/"),
+            altar_model=str(altar.get("model", "aikido/altar-1")),
+            altar_api_key_env=str(altar.get("api_key_env", "BELTU_ALTAR1_API_KEY")),
+            altar_api_key_required=bool(altar.get("api_key_required", False)),
+            altar_use_json_mode=bool(altar.get("use_json_mode", False)),
+            altar_stream=bool(altar.get("stream", True)),
+            altar_local_only=bool(altar.get("local_only", True)),
+            altar_timeout_seconds=max(1.0, float(altar.get("timeout_seconds", 180.0))),
+            altar_max_tokens=max(256, int(altar.get("max_tokens", 3200))),
+            altar_temperature=max(0.0, min(1.0, float(altar.get("temperature", 0.1)))),
+            altar_activity_dir=str(altar.get("activity_dir", "data/runtime/altar1.active")),
         )
 
     def api_key(self) -> str | None:
         value = os.getenv(self.api_key_env)
         return value.strip() if value and value.strip() else None
 
+    def altar_api_key(self) -> str | None:
+        value = os.getenv(self.altar_api_key_env)
+        return value.strip() if value and value.strip() else None
+
     @property
     def is_loopback(self) -> bool:
         host = (urlparse(self.base_url).hostname or "").lower()
-        return host in {"127.0.0.1", "localhost", "::1"}
+        return host in LOOPBACK_HOSTS
+
+    @property
+    def altar_is_loopback(self) -> bool:
+        host = (urlparse(self.altar_base_url).hostname or "").lower()
+        return host in LOOPBACK_HOSTS
+
+    def altar_config(self) -> "LLMConfig":
+        """Return a provider config representing the Altar-1 local node."""
+        return LLMConfig(
+            enabled=self.altar_enabled,
+            provider="altar1_local",
+            base_url=self.altar_base_url,
+            model=self.altar_model,
+            api_key_env=self.altar_api_key_env,
+            api_key_required=self.altar_api_key_required,
+            use_json_mode=self.altar_use_json_mode,
+            stream=self.altar_stream,
+            local_only=self.altar_local_only,
+            timeout_seconds=self.altar_timeout_seconds,
+            max_tokens=self.altar_max_tokens,
+            temperature=self.altar_temperature,
+            fallback_to_heuristic=self.fallback_to_heuristic,
+            max_hypotheses=self.max_hypotheses,
+            max_actions=self.max_actions,
+            system_prompt_path=self.system_prompt_path,
+            reasoning_prompt_path=self.reasoning_prompt_path,
+            router_enabled=self.router_enabled,
+            altar_enabled=self.altar_enabled,
+            altar_base_url=self.altar_base_url,
+            altar_model=self.altar_model,
+            altar_api_key_env=self.altar_api_key_env,
+            altar_api_key_required=self.altar_api_key_required,
+            altar_use_json_mode=self.altar_use_json_mode,
+            altar_stream=self.altar_stream,
+            altar_local_only=self.altar_local_only,
+            altar_timeout_seconds=self.altar_timeout_seconds,
+            altar_max_tokens=self.altar_max_tokens,
+            altar_temperature=self.altar_temperature,
+            altar_activity_dir=self.altar_activity_dir,
+        )
 
     @classmethod
     def from_project(cls, root: Path) -> "LLMConfig":
