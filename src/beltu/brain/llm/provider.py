@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -464,7 +465,7 @@ class GeminiRateLimiter:
             return max(0.0, self._window - (now - self._timestamps[0]))
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class GeminiCloudProvider:
     """Google Gemini cloud provider used only as a sanitized BELTU co-pilot.
 
