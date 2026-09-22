@@ -39,6 +39,13 @@ from beltu.execution.adapters import (
     NmapAdapter,
     NucleiAdapter,
     SubfinderAdapter,
+    BrowserAutomationAdapter,
+    HttpWorkflowAdapter,
+    SessionReplayAdapter,
+    ApiManipulationAdapter,
+    AuthorizationTestingAdapter,
+    BusinessLogicWorkflowAdapter,
+    RaceConditionAdapter,
 )
 from beltu.execution.registry import CapabilityRegistry, ToolRegistry
 from beltu.execution.capability_dispatcher import CapabilityDispatcher
@@ -127,6 +134,13 @@ def build_components():
         HttpxAdapter(),
         NmapAdapter(),
         NucleiAdapter(),
+        BrowserAutomationAdapter(),
+        HttpWorkflowAdapter(),
+        SessionReplayAdapter(),
+        ApiManipulationAdapter(),
+        AuthorizationTestingAdapter(),
+        BusinessLogicWorkflowAdapter(),
+        RaceConditionAdapter(),
     ):
         tools.register(adapter)
     capabilities = CapabilityRegistry(tools)
