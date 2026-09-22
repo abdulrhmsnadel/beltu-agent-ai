@@ -867,9 +867,12 @@ def approval_approve(
         if decision is None:
             raise ValueError(f"Approved decision #{req.decision_id} no longer exists")
         await orchestrator.start()
-        task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
-        await orchestrator.scheduler.queue.join()
-        final_task = tasks.get(task.id)
+        try:
+            task = await _queue_decision_execution(tasks, orchestrator, decision.id, decision.scan_id)
+            await orchestrator.scheduler.queue.join()
+            final_task = tasks.get(task.id)
+        finally:
+            await orchestrator.stop()
     except Exception as exc:
         console.print(f"[red]Blocked:[/red] {exc}")
         raise typer.Exit(code=2)
