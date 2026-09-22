@@ -22,6 +22,12 @@ beltu = "beltu.interface.cli.app:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+  "httpx2>=0.1,<1",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
