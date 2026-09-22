@@ -7,13 +7,19 @@ from typing import Any, Literal
 from beltu.brain.llm.provider import (
     Altar1LocalProvider,
     Altar1RequestProfile,
+    CloudSanitizationError,
     DisabledLLMProvider,
+    GeminiCloudError,
+    GeminiCloudProvider,
+    GeminiRateLimitError,
+    GeminiSafetyBlockedError,
     LLMProvider,
 )
 from beltu.brain.schemas import AgentContext
 
 
 RouteName = Literal["standard", "altar1"]
+GeminiDecision = Literal["continue", "retry", "correct", "escalate_to_deep_review", "stop_escalation", "observe"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +28,18 @@ class RouteDecision:
     score: float
     reasons: tuple[str, ...]
     profile: Altar1RequestProfile | None = None
+    gemini_mode: str = "monitor"
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiAdvice:
+    decision: GeminiDecision
+    confidence: float
+    reason: str
+    focus: str
+    recommended_capability: str | None
+    notes: tuple[str, ...] = ()
+    status: str = "ok"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +49,9 @@ class RoutedCompletion:
     provider_name: str
     model: str
     decision: RouteDecision
+    gemini_advice: GeminiAdvice | None = None
+    altar_review: str | None = None
+    trace: dict[str, Any] | None = None
 
 
 class LLMRouter:
@@ -64,16 +85,20 @@ class LLMRouter:
         self,
         standard_provider: LLMProvider | None = None,
         altar_provider: Altar1LocalProvider | None = None,
+        gemini_provider: GeminiCloudProvider | None = None,
         *,
         enabled: bool = True,
     ) -> None:
         self.standard_provider = standard_provider or DisabledLLMProvider()
         self.altar_provider = altar_provider or DisabledLLMProvider()  # type: ignore[assignment]
+        self.gemini_provider = gemini_provider or DisabledLLMProvider()  # type: ignore[assignment]
         self.enabled = enabled
         self.last_decision: RouteDecision | None = None
+        self.last_advice: GeminiAdvice | None = None
+        self.last_trace: dict[str, Any] = {}
 
     def available(self) -> bool:
-        providers = (self.standard_provider, self.altar_provider)
+        providers = (self.standard_provider, self.altar_provider, self.gemini_provider)
         return self.enabled and any(not isinstance(p, DisabledLLMProvider) for p in providers)
 
     @staticmethod
