@@ -70,7 +70,7 @@ from beltu.brain.hypothesis_engine import HeuristicHypothesisEngine
 from beltu.brain.planner import Planner
 from beltu.brain.prioritizer import HypothesisPrioritizer
 from beltu.brain.reasoning_engine import HybridReasoningEngine
-from beltu.brain.llm import FreeTokenLocalProvider, LLMConfig, LLMReasoningEngine, OpenAICompatibleProvider
+from beltu.brain.llm import Altar1LocalProvider, DisabledLLMProvider, FreeTokenLocalProvider, LLMConfig, LLMReasoningEngine, LLMRouter, OpenAICompatibleProvider
 from beltu.version import __version__
 from beltu.release.audit import run_audit
 from beltu.reporting.engine import ReportEngine
@@ -142,6 +142,9 @@ def build_components():
             poll_interval=0.5,
             freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
             freetoken_url="http://127.0.0.1:8000",
+            altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
+            altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
+            altar1_url="http://127.0.0.1:8001",
             gpu_vram_budget_percent=45,
         ),
         observations,
@@ -193,11 +196,14 @@ def build_components():
     context_builder = ContextBuilder(scans, targets, observations, hypotheses, AttackSurfaceGraph(), asset_intelligence, surface_intelligence, api_intelligence, auth_intelligence, authorization_intelligence, business_logic_intelligence, finding_intelligence)
     agent_config = load_agent_config()
     llm_config = LLMConfig.from_project(Path.cwd())
-    # BELTU 1.1 runtime reasoning is local-only by design. The legacy generic
-    # compatibility provider remains importable for isolated tests, but the live
-    # agent never routes reasoning to a cloud endpoint.
-    llm_provider = FreeTokenLocalProvider(llm_config)
-    llm_reasoner = LLMReasoningEngine(Path.cwd(), llm_config, llm_provider)
+    standard_provider = FreeTokenLocalProvider(llm_config) if llm_config.enabled else DisabledLLMProvider()
+    altar_provider = Altar1LocalProvider(llm_config) if llm_config.altar_enabled else DisabledLLMProvider()
+    llm_router = LLMRouter(
+        standard_provider=standard_provider,
+        altar_provider=altar_provider,
+        enabled=llm_config.router_enabled,
+    )
+    llm_reasoner = LLMReasoningEngine(Path.cwd(), llm_config, llm_router)
     reasoning_engine = HybridReasoningEngine(
         heuristic=HeuristicHypothesisEngine(),
         prioritizer=HypothesisPrioritizer(),
@@ -933,6 +939,9 @@ def resources() -> None:
         2, 30, 30, 1, 0.5,
         freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
         freetoken_url="http://127.0.0.1:8000",
+        altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
+        altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
+        altar1_url="http://127.0.0.1:8001",
         gpu_vram_budget_percent=45,
     )
     snap = governor.snapshot()
@@ -941,11 +950,24 @@ def resources() -> None:
     console.print(f"Host CPU: {snap.host_cpu_percent:.2f}% | Host RAM: {snap.host_memory_percent:.2f}%")
     console.print(f"Load(1m): {snap.load1:.2f} | CPUs: {snap.cpu_count}")
     if snap.gpu:
-        console.print(f"GPU: {snap.gpu.name or 'NVIDIA'} | VRAM {snap.gpu.used_percent:.2f}% used | FreeToken {snap.gpu.freetoken_percent:.2f}%")
+        console.print(
+            f"GPU: {snap.gpu.name or 'NVIDIA'} | VRAM {snap.gpu.used_percent:.2f}% used | "
+            f"FreeToken {snap.gpu.freetoken_percent:.2f}% | Altar-1 {snap.gpu.altar1_percent:.2f}%"
+        )
     else:
         console.print("GPU: unavailable (nvidia-smi not detected or no GPU telemetry)")
     if snap.freetoken:
-        console.print(f"FreeToken: {'reachable' if snap.freetoken.reachable else 'not reachable'} | PID={snap.freetoken.pid or '-'} | model={snap.freetoken.model or '-'} | backend={snap.freetoken.moe_backend or '-'}")
+        console.print(
+            f"FreeToken: {'reachable' if snap.freetoken.reachable else 'not reachable'} | "
+            f"PID={snap.freetoken.pid or '-'} | model={snap.freetoken.model or '-'} | "
+            f"backend={snap.freetoken.moe_backend or '-'}"
+        )
+    if snap.altar1:
+        console.print(
+            f"Altar-1: {'active' if snap.altar1.active else 'idle'} | "
+            f"reachable={'yes' if snap.altar1.reachable else 'no'} | "
+            f"PID={snap.altar1.pid or '-'} | model={snap.altar1.model or '-'}"
+        )
     else:
         console.print("FreeToken: not configured/running")
     console.print(f"Adaptive process capacity: {governor.effective_capacity(snap)}")
@@ -1003,10 +1025,13 @@ def status() -> None:
         2, 30, 30, 1, 0.5,
         freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
         freetoken_url="http://127.0.0.1:8000",
+        altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
+        altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
+        altar1_url="http://127.0.0.1:8001",
         gpu_vram_budget_percent=45,
     )
     snap = governor.snapshot()
-    console.print(f"BELTU {__version__} — Agent Core + Brain + Local FreeToken + Adaptive Execution + Mobile Control")
+    console.print(f"BELTU {__version__} — Agent Core + Multi-Model Brain + Adaptive Execution + Mobile Control")
     console.print(f"Registered targets: {len(all_targets)}")
     console.print(f"Resumable scans: {len(scans.list_resumable())}")
     console.print(f"Runnable tasks: {len(pending)}")
