@@ -106,7 +106,7 @@ class OpenAICompatibleProvider:
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "BELTU/1.2",
+            "User-Agent": "BELTU/1.3",
         }
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
@@ -161,7 +161,7 @@ class FreeTokenLocalProvider:
             headers={
                 "Content-Type": "application/json",
                 "Accept": accept,
-                "User-Agent": "BELTU/1.2-local-freetoken",
+                "User-Agent": "BELTU/1.3-local-freetoken",
             },
         )
         try:
@@ -294,7 +294,7 @@ class Altar1LocalProvider:
         configured = self.model.strip()
         if configured and configured.lower() != "auto":
             return configured
-        req = request.Request(self._models_url(), method="GET", headers={"Accept": "application/json", "User-Agent": "BELTU/1.2-local-altar1"})
+        req = request.Request(self._models_url(), method="GET", headers={"Accept": "application/json", "User-Agent": "BELTU/1.3-local-altar1"})
         try:
             with request.urlopen(req, timeout=min(self.config.altar_timeout_seconds, 15.0)) as response:
                 payload = json.loads(response.read().decode("utf-8"))
@@ -553,15 +553,17 @@ class GeminiCloudProvider:
         api_key = self.api_key()
         if not api_key:
             raise GeminiCloudError(f"Gemini API key is missing; set {self.config.gemini_api_key_env}")
+
+        # Privacy filtering must complete before a cloud-rate-limit slot is consumed.
+        system_safe = self._sanitize_prompt(system_prompt)
+        user_safe = self._sanitize_prompt(user_prompt)
+
         if not self._limiter.try_acquire():
             delay = self._limiter.seconds_until_slot()
             raise GeminiRateLimitError(
                 f"BELTU Gemini rate limiter reached {self.config.gemini_requests_per_minute} RPM; "
                 f"next slot in {delay:.1f}s"
             )
-
-        system_safe = self._sanitize_prompt(system_prompt)
-        user_safe = self._sanitize_prompt(user_prompt)
         body: dict[str, Any] = {
             "systemInstruction": {"parts": [{"text": system_safe}]},
             "contents": [{"role": "user", "parts": [{"text": user_safe}]}],
