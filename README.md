@@ -73,12 +73,7 @@ git clone https://github.com/abdulrhmsnadel/beltu-agent-ai.git
 cd beltu-agent-ai
 ```
 
-If you already downloaded the source archive:
-
-```bash
-unzip BELTU-1.2.0-source.zip
-cd BELTU-1.2.0
-```
+Prebuilt source archives are versioned separately from the Git checkout. For the current GitHub source, use the clone instructions above.
 
 ---
 
@@ -166,7 +161,7 @@ beltu target your-authorized-domain.example
 
 ## 7. Configure execution
 
-BELTU 1.2.0 now supports autonomous execution for registered low-risk adapters:
+BELTU 1.3.0 supports autonomous execution for registered low-risk adapters:
 
 ```yaml
 execution:
@@ -411,7 +406,7 @@ The feedback loop uses the new observations to update hypotheses and generate th
 
 ---
 
-# Multi-model local brain — v1.2.0
+# Multi-model brain — v1.3.0
 
 BELTU 1.2.0 adds a deterministic **Multi-Model LLM Router**.
 
@@ -425,6 +420,10 @@ BELTU 1.2.0 adds a deterministic **Multi-Model LLM Router**.
           Standard local      Altar-1 local
              :8000/v1            :8001/v1
 ```
+
+## Standard local operator — :8000
+
+The standard local model remains the primary operator. Gemini observes its sanitized state and can advise; the local operator decides and executes.
 
 ## Standard local model
 
