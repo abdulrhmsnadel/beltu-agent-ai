@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from beltu.policy.scope_guard import ScopeGuard
-from beltu.execution.workers.common import bounded_int, scope_url
+from beltu.execution.workers.common import bounded_int, redact_url, scope_url
 
 BROWSER_ROOT = Path.cwd() / "data" / "runtime" / "browser"
 SESSION_ROOT = Path.cwd() / "data" / "runtime" / "sessions"
@@ -75,7 +75,7 @@ async def run(job: dict[str, Any]) -> None:
                 safe = scope_url(scope, response.url)
             except Exception:
                 return
-            emit("browser.response", safe, {
+            emit("browser.response", redact_url(safe), {
                 "status": response.status,
                 "resource_type": response.request.resource_type,
                 "method": response.request.method,
@@ -90,10 +90,10 @@ async def run(job: dict[str, Any]) -> None:
             if action == "goto":
                 url = scope_url(scope, str(step.get("url", "")))
                 await page.goto(url, wait_until="domcontentloaded", timeout=min(int(step.get("timeout_ms", 30000)), 60000))
-                emit("browser.navigation", page.url, {"step": index, "title": await page.title()})
+                emit("browser.navigation", redact_url(page.url), {"step": index, "title": await page.title()})
             elif action == "click":
                 await page.locator(str(step["selector"])).first.click(timeout=30000)
-                emit("browser.action", page.url, {"step": index, "action": "click"})
+                emit("browser.action", redact_url(page.url), {"step": index, "action": "click"})
             elif action == "fill":
                 await page.locator(str(step["selector"])).first.fill(str(step.get("value", "")), timeout=30000)
                 emit("browser.action", page.url, {"step": index, "action": "fill", "field": str(step["selector"])})
@@ -105,7 +105,7 @@ async def run(job: dict[str, Any]) -> None:
                 emit("browser.action", page.url, {"step": index, "action": "wait_for", "field": str(step["selector"])})
             elif action == "extract_text":
                 value = await page.locator(str(step["selector"])).first.inner_text(timeout=30000)
-                emit("browser.extraction", page.url, {"step": index, "selector": str(step["selector"]), "text_length": len(value), "text_sample": value[:2000]})
+                emit("browser.extraction", redact_url(page.url), {"step": index, "selector": str(step["selector"]), "text_length": len(value), "text_sample": value[:2000]})
             elif action == "screenshot":
                 BROWSER_ROOT.mkdir(parents=True, exist_ok=True)
                 name = str(step.get("name", f"step-{index}.png"))
@@ -115,7 +115,7 @@ async def run(job: dict[str, Any]) -> None:
                 if path.parent != BROWSER_ROOT.resolve():
                     raise ValueError("screenshot path escaped browser runtime directory")
                 await page.screenshot(path=str(path), full_page=bool(step.get("full_page", False)))
-                emit("browser.evidence", page.url, {"step": index, "path": str(path.relative_to(Path.cwd()))})
+                emit("browser.evidence", redact_url(page.url), {"step": index, "path": str(path.relative_to(Path.cwd()))})
             else:
                 raise ValueError(f"Unsupported browser action: {action}")
 
