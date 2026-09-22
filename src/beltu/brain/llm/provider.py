@@ -654,16 +654,38 @@ class GeminiCloudProvider:
             operator_snapshot = {"summary": self._filter.scrub_text(local_draft, limit=12_000)}
         serialized_operator = json.dumps(operator_snapshot, ensure_ascii=True, sort_keys=True)
         self._filter.ensure_allowed_text(serialized_operator)
+        recent_observations = payload.get("observations", [])
+        recent_sources = []
+        if isinstance(recent_observations, list):
+            for item in recent_observations[-20:]:
+                if isinstance(item, dict) and item.get("source"):
+                    source = str(item["source"])
+                    if source not in recent_sources:
+                        recent_sources.append(source)
+
+        current_actions = operator_snapshot.get("actions", []) if isinstance(operator_snapshot, dict) else []
         user_payload = {
             "mode": mode,
             "goal": self._filter.scrub_text(goal, limit=4000),
+            "agent_operating_view": {
+                "primary_operator": "BELTU standard local model at :8000",
+                "cloud_copilot": "Gemini",
+                "deep_reviewer": "Altar-1 local at :8001",
+                "execution_authority": "standard local BELTU operator only",
+                "recent_tool_sources": recent_sources[:20],
+                "current_operator_actions": current_actions[:8] if isinstance(current_actions, list) else [],
+                "observation_window": "latest sanitized observations plus structured security summaries",
+                "cycle_role": "review the current local reasoning after the latest agent/tool state and advise the next cycle",
+            },
             "local_operator_snapshot": operator_snapshot,
             "context": payload,
             "advisory_contract": {
                 "role": "BELTU cloud co-pilot",
-                "observe": "inspect sanitized telemetry and the local operator state",
-                "advise": "identify mistakes, missing evidence, useful next checks, retries, corrections, or escalation",
-                "authority": "advisory only; the local operator chooses and executes tools",
+                "observe": "inspect sanitized telemetry, recent tool sources, current local reasoning, and structured security context",
+                "advise": "identify mistakes, missing evidence, useful next checks, retries, corrections, continuation, escalation, or stop-escalation",
+                "feedback_loop": "the local operator receives this advisory and performs any resulting tool action in the next execution cycle",
+                "authority": "advisory only; the local operator chooses, approves, and executes tools",
+                "never_execute": true,
                 "forbidden_categories": ["final_reporting", "exploit_payloads", "poc_code", "credential_material", "session_secrets", "direct_tool_execution", "shell_commands"],
             },
         }
