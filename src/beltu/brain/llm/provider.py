@@ -12,6 +12,7 @@ from urllib import error as urlerror
 from urllib import request
 
 from beltu.brain.llm.config import LLMConfig
+from beltu.brain.llm.privacy import CloudDataPolicy, CloudPrivacyFilter, CloudSanitizationError
 
 
 class LLMProvider(Protocol):
@@ -416,6 +417,243 @@ class Altar1LocalProvider:
             route="altar1_default",
         )
 
+
+
+class GeminiRateLimitError(RuntimeError):
+    """BELTU-local rate limiter or Gemini API 429 response."""
+
+
+class GeminiSafetyBlockedError(RuntimeError):
+    """Gemini rejected or safety-blocked a request."""
+
+
+class GeminiCloudError(RuntimeError):
+    """Non-retryable Gemini cloud provider error."""
+
+
+class GeminiRateLimiter:
+    """Thread-safe sliding-window limiter used before cloud requests."""
+
+    def __init__(self, requests_per_minute: int, burst: int = 1) -> None:
+        import threading
+        from collections import deque
+
+        self.requests_per_minute = max(1, int(requests_per_minute))
+        self.burst = max(1, min(int(burst), self.requests_per_minute))
+        self._window = 60.0
+        self._timestamps: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def try_acquire(self) -> bool:
+        now = time.monotonic()
+        with self._lock:
+            while self._timestamps and now - self._timestamps[0] >= self._window:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= self.requests_per_minute:
+                return False
+            # Burst is a safety valve for startup/reconnect without allowing
+            # more than the configured RPM over the rolling minute.
+            self._timestamps.append(now)
+            return len(self._timestamps) <= self.requests_per_minute
+
+    def seconds_until_slot(self) -> float:
+        now = time.monotonic()
+        with self._lock:
+            if len(self._timestamps) < self.requests_per_minute:
+                return 0.0
+            return max(0.0, self._window - (now - self._timestamps[0]))
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiCloudProvider:
+    """Google Gemini cloud provider used only as a sanitized BELTU co-pilot.
+
+    The provider never receives final reports, confirmed exploit payloads, PoC
+    code, credentials, or session secrets. It is advisory: BELTU's local model
+    remains responsible for the final reasoning and tool execution decision.
+    """
+
+    config: LLMConfig
+    name: str = "gemini_cloud"
+
+    def __post_init__(self) -> None:
+        if not self.config.gemini_api_key_env.strip():
+            raise ValueError("Gemini API key environment variable name cannot be empty")
+        policy = CloudDataPolicy(
+            enabled=self.config.gemini_scrub_before_send,
+            max_input_chars=self.config.gemini_max_input_chars,
+            max_observation_chars=self.config.gemini_max_observation_chars,
+            allow_final_reports=self.config.gemini_allow_final_reports,
+            allow_exploit_payloads=self.config.gemini_allow_exploit_payloads,
+            allow_poc_code=self.config.gemini_allow_poc_code,
+            allow_session_data=self.config.gemini_allow_session_data,
+            allow_credentials=self.config.gemini_allow_credentials,
+        )
+        object.__setattr__(self, "_filter", CloudPrivacyFilter(policy))
+        object.__setattr__(
+            self,
+            "_limiter",
+            GeminiRateLimiter(self.config.gemini_requests_per_minute, self.config.gemini_burst),
+        )
+
+    @property
+    def model(self) -> str:
+        return self.config.gemini_model
+
+    @property
+    def base_url(self) -> str:
+        return self.config.gemini_base_url.rstrip("/")
+
+    def api_key(self) -> str | None:
+        value = os.getenv(self.config.gemini_api_key_env)
+        return value.strip() if value and value.strip() else None
+
+    def _endpoint(self) -> str:
+        from urllib.parse import quote
+        model = quote(self.model.strip(), safe="-_.~")
+        return f"{self.base_url}/models/{model}:generateContent"
+
+    def _sanitize_prompt(self, value: str) -> str:
+        if not self.config.gemini_scrub_before_send:
+            self._filter.ensure_allowed_text(value)
+            return value
+        scrubbed = self._filter.scrub_text(value, limit=self.config.gemini_max_input_chars)
+        self._filter.ensure_allowed_text(scrubbed)
+        return scrubbed
+
+    @staticmethod
+    def _extract_text(payload: dict[str, Any]) -> str:
+        feedback = payload.get("promptFeedback")
+        if isinstance(feedback, dict) and str(feedback.get("blockReason", "")).strip():
+            raise GeminiSafetyBlockedError(f"Gemini safety block: {feedback['blockReason']}")
+        candidates = payload.get("candidates")
+        if not isinstance(candidates, list) or not candidates:
+            raise GeminiCloudError("Gemini returned no candidates")
+        texts: list[str] = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            finish_reason = str(candidate.get("finishReason", "")).upper()
+            if finish_reason in {"SAFETY", "BLOCKLIST", "PROHIBITED_CONTENT"}:
+                raise GeminiSafetyBlockedError(f"Gemini safety block: {finish_reason}")
+            content = candidate.get("content", {})
+            parts = content.get("parts", []) if isinstance(content, dict) else []
+            for part in parts:
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    texts.append(part["text"])
+        text = "".join(texts).strip()
+        if not text:
+            raise GeminiCloudError("Gemini returned empty content")
+        return text
+
+    def _post(self, *, system_prompt: str, user_prompt: str) -> tuple[str, float]:
+        api_key = self.api_key()
+        if not api_key:
+            raise GeminiCloudError(f"Gemini API key is missing; set {self.config.gemini_api_key_env}")
+        if not self._limiter.try_acquire():
+            delay = self._limiter.seconds_until_slot()
+            raise GeminiRateLimitError(
+                f"BELTU Gemini rate limiter reached {self.config.gemini_requests_per_minute} RPM; "
+                f"next slot in {delay:.1f}s"
+            )
+
+        system_safe = self._sanitize_prompt(system_prompt)
+        user_safe = self._sanitize_prompt(user_prompt)
+        body: dict[str, Any] = {
+            "systemInstruction": {"parts": [{"text": system_safe}]},
+            "contents": [{"role": "user", "parts": [{"text": user_safe}]}],
+            "generationConfig": {
+                "maxOutputTokens": self.config.gemini_max_output_tokens,
+                "responseMimeType": "application/json",
+            },
+        }
+        payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        req = request.Request(
+            self._endpoint(),
+            data=payload,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "x-goog-api-key": api_key,
+                "User-Agent": "BELTU/1.3-gemini-copilot",
+            },
+        )
+        started = time.perf_counter()
+        try:
+            with request.urlopen(req, timeout=self.config.gemini_timeout_seconds) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+                http_status = int(response.status)
+        except urlerror.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1600]
+            if exc.code == 429:
+                raise GeminiRateLimitError("Gemini API returned HTTP 429 Too Many Requests") from exc
+            if exc.code in {400, 403} and re.search(r"(?i)safety|blocked|prohibited", detail):
+                raise GeminiSafetyBlockedError(f"Gemini request blocked: HTTP {exc.code}") from exc
+            raise GeminiCloudError(f"Gemini HTTP {exc.code}: {detail}") from exc
+        except urlerror.URLError as exc:
+            raise GeminiCloudError(f"Gemini connection failed: {exc.reason}") from exc
+
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise GeminiCloudError("Gemini returned invalid JSON") from exc
+        if http_status >= 400:
+            raise GeminiCloudError(f"Gemini returned HTTP {http_status}")
+        return self._extract_text(parsed), elapsed_ms
+
+    def complete(self, *, system_prompt: str, user_prompt: str) -> tuple[str, float]:
+        return self._post(system_prompt=system_prompt, user_prompt=user_prompt)
+
+    def advise(self, *, context: AgentContext, local_draft: str, mode: str, goal: str) -> tuple[str, float, dict[str, Any]]:
+        payload = self._filter.context_payload(context)
+        draft = self._filter.scrub_text(local_draft, limit=80_000)
+        self._filter.ensure_allowed_text(draft)
+        user_payload = {
+            "mode": mode,
+            "goal": self._filter.scrub_text(goal, limit=4_000),
+            "local_operator_draft": draft,
+            "context": payload,
+            "advisory_contract": {
+                "role": "BELTU co-pilot",
+                "allowed": [
+                    "identify anomalies",
+                    "diagnose failed or inconsistent steps",
+                    "suggest what evidence to collect next",
+                    "suggest a bounded next capability",
+                    "recommend continue, retry, correct, escalate_to_deep_review, or stop_escalation",
+                ],
+                "forbidden": [
+                    "final vulnerability report",
+                    "confirmed exploit payload",
+                    "proof-of-concept code",
+                    "credentials",
+                    "session secrets",
+                    "direct tool invocation",
+                    "shell commands",
+                ],
+            },
+        }
+        serialized = json.dumps(user_payload, ensure_ascii=True, sort_keys=True)
+        self._filter.ensure_allowed_text(serialized)
+        system = (
+            "You are BELTU's cloud advisory co-pilot. "
+            "You observe a local security-testing agent but you do not execute tools. "
+            "Analyze only the supplied sanitized telemetry. "
+            "Return JSON with: decision (continue|retry|correct|escalate_to_deep_review|stop_escalation|observe), "
+            "confidence (0..1), reason, focus, recommended_capability, and notes. "
+            "Do not produce exploit payloads, PoC code, credentials, or final reports."
+        )
+        text, latency = self._post(system_prompt=system, user_prompt=serialized)
+        meta = {
+            "mode": mode,
+            "goal": self._filter.scrub_text(goal, limit=4000),
+            "input_chars": len(serialized),
+            "provider": self.name,
+            "model": self.model,
+        }
+        return text, latency, meta
 
 class DisabledLLMProvider:
     name = "disabled"
