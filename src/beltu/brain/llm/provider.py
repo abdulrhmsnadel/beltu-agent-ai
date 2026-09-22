@@ -611,52 +611,78 @@ class GeminiCloudProvider:
 
     def advise(self, *, context: AgentContext, local_draft: str, mode: str, goal: str) -> tuple[str, float, dict[str, Any]]:
         payload = self._filter.context_payload(context)
-        draft = self._filter.scrub_text(local_draft, limit=80_000)
-        self._filter.ensure_allowed_text(draft)
+        operator_snapshot: dict[str, Any]
+        try:
+            draft_payload = json.loads(local_draft.strip())
+        except json.JSONDecodeError:
+            draft_payload = None
+        if isinstance(draft_payload, dict):
+            operator_snapshot = {
+                "summary": self._filter.scrub_text(str(draft_payload.get("summary", "")), limit=4000),
+                "hypotheses": [
+                    {
+                        "statement": self._filter.scrub_text(str(item.get("statement", "")), limit=1200),
+                        "confidence": item.get("confidence"),
+                    }
+                    for item in draft_payload.get("hypotheses", [])[:8]
+                    if isinstance(item, dict)
+                ],
+                "actions": [
+                    {
+                        "action_kind": item.get("action_kind"),
+                        "rationale": self._filter.scrub_text(str(item.get("rationale", "")), limit=1200),
+                        "confidence": item.get("confidence"),
+                        "risk_level": item.get("risk_level"),
+                        "requires_approval": item.get("requires_approval"),
+                        "action_payload": {
+                            key: self._filter.scrub_text(str(item.get("action_payload", {}).get(key, "")), limit=600)
+                            for key in ("target", "capability", "tool", "hypothesis", "observation_ids")
+                            if isinstance(item.get("action_payload", {}), dict) and key in item.get("action_payload", {})
+                        },
+                    }
+                    for item in draft_payload.get("actions", [])[:8]
+                    if isinstance(item, dict)
+                ],
+            }
+        else:
+            operator_snapshot = {"summary": self._filter.scrub_text(local_draft, limit=12_000)}
+        serialized_operator = json.dumps(operator_snapshot, ensure_ascii=True, sort_keys=True)
+        self._filter.ensure_allowed_text(serialized_operator)
         user_payload = {
             "mode": mode,
-            "goal": self._filter.scrub_text(goal, limit=4_000),
-            "local_operator_draft": draft,
+            "goal": self._filter.scrub_text(goal, limit=4000),
+            "local_operator_snapshot": operator_snapshot,
             "context": payload,
             "advisory_contract": {
-                "role": "BELTU co-pilot",
-                "allowed": [
-                    "identify anomalies",
-                    "diagnose failed or inconsistent steps",
-                    "suggest what evidence to collect next",
-                    "suggest a bounded next capability",
-                    "recommend continue, retry, correct, escalate_to_deep_review, or stop_escalation",
-                ],
-                "forbidden": [
-                    "final vulnerability report",
-                    "confirmed exploit payload",
-                    "proof-of-concept code",
-                    "credentials",
-                    "session secrets",
-                    "direct tool invocation",
-                    "shell commands",
-                ],
+                "role": "BELTU cloud co-pilot",
+                "observe": "inspect sanitized telemetry and the local operator state",
+                "advise": "identify mistakes, missing evidence, useful next checks, retries, corrections, or escalation",
+                "authority": "advisory only; the local operator chooses and executes tools",
+                "forbidden": ["final reports", "confirmed exploit payloads", "PoC code", "credentials", "session secrets", "direct tool invocation", "shell commands"],
             },
         }
         serialized = json.dumps(user_payload, ensure_ascii=True, sort_keys=True)
         self._filter.ensure_allowed_text(serialized)
         system = (
-            "You are BELTU's cloud advisory co-pilot. "
-            "You observe a local security-testing agent but you do not execute tools. "
-            "Analyze only the supplied sanitized telemetry. "
-            "Return JSON with: decision (continue|retry|correct|escalate_to_deep_review|stop_escalation|observe), "
-            "confidence (0..1), reason, focus, recommended_capability, and notes. "
-            "Do not produce exploit payloads, PoC code, credentials, or final reports."
+            "You are BELTU cloud co-pilot. You monitor the local security agent using only the supplied sanitized telemetry. "
+            "You never execute tools and never become the final decision authority. "
+            "Diagnose weak reasoning, failed steps, missing evidence, useful next checks, and when to continue, retry, correct, escalate, or stop escalation. "
+            "Return JSON only with decision, confidence, reason, focus, recommended_capability, and notes. "
+            "Never output final vulnerability reports, exploit payloads, PoC code, credentials, or shell commands."
         )
         text, latency = self._post(system_prompt=system, user_prompt=serialized)
         meta = {
             "mode": mode,
-            "goal": self._filter.scrub_text(goal, limit=4000),
             "input_chars": len(serialized),
+            "sent_fields": ["sanitized_context", "local_operator_snapshot", "goal", "mode"],
+            "execution_authority": "local_operator_only",
+            "tool_execution": "local_only",
+            "downstream": "standard_local_final_pass",
             "provider": self.name,
             "model": self.model,
         }
         return text, latency, meta
+
 
 class DisabledLLMProvider:
     name = "disabled"
