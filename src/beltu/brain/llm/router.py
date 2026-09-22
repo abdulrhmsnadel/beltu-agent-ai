@@ -228,6 +228,21 @@ class LLMRouter:
         notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
         return GeminiAdvice(decision, confidence, reason, focus, recommended_capability, notes)
 
+    def _primary_local(self, *, decision: RouteDecision, system_prompt: str, user_prompt: str) -> tuple[str, float, str, str]:
+        if not isinstance(self.standard_provider, DisabledLLMProvider):
+            text, latency = self.standard_provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
+            return text, latency, self.standard_provider.name, self.standard_provider.model
+        if decision.route == "altar1" and not isinstance(self.altar_provider, DisabledLLMProvider):
+            profile = decision.profile or Altar1RequestProfile("altar1_primary", 0.08, 2600, 0.90)
+            text, latency = self.altar_provider.complete_with_profile(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                profile=profile,
+                route="altar1_primary",
+            )
+            return text, latency, self.altar_provider.name, self.altar_provider.model
+        raise RuntimeError("No local LLM provider is available")
+
     def complete_for_context(
         self,
         *,
