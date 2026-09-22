@@ -6,7 +6,7 @@ import re
 import tempfile
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol
 from urllib import error as urlerror
@@ -476,6 +476,8 @@ class GeminiCloudProvider:
 
     config: LLMConfig
     name: str = "gemini_cloud"
+    _filter: CloudPrivacyFilter = field(init=False, repr=False)
+    _limiter: GeminiRateLimiter = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         if not self.config.gemini_api_key_env.strip():
