@@ -5,3 +5,10 @@ tools:
   - httpx
   - nmap
   - nuclei
+  - browser
+  - http-workflow
+  - session-replay
+  - api-manipulation
+  - authorization-matrix
+  - business-logic
+  - race-condition
