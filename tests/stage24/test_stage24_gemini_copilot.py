@@ -171,6 +171,9 @@ def test_gemini_provider_redacts_context_and_uses_env_key(gemini_server, monkeyp
     assert GeminiFixtureHandler.requests[-1]["api_key"] == "fixture-secret-key"
     assert meta["execution_authority"] == "local_operator_only"
     assert meta["tool_execution"] == "local_only"
+    sent_payload = GeminiFixtureHandler.requests[-1]["body"]["contents"][0]["parts"][0]["text"]
+    assert "recent_tool_sources" in sent_payload
+    assert "http-workflow" in sent_payload
 
 
 def test_gemini_rate_limiter_blocks_second_request(monkeypatch):
@@ -193,7 +196,7 @@ def test_gemini_safety_block_is_distinguishable(gemini_server, monkeypatch):
     GeminiFixtureHandler.response_mode = "safety"
     provider = GeminiCloudProvider(config_for(gemini_server))
     with pytest.raises(GeminiSafetyBlockedError):
-        provider.complete(system_prompt="safe", user_prompt="safe telemetry")
+        provider._post(system_prompt="safe", user_prompt="safe telemetry")
 
 
 def test_router_uses_gemini_advice_but_local_operator_finishes(gemini_server, monkeypatch):
