@@ -1,11 +1,10 @@
-# Stage 21 — Product Upgrade / Local AI
+# Stage 22 — Multi-Model Local Brain
 
-Stage 21 upgrades the completed persistent-agent architecture to a local-first product release.
+BELTU 1.2.0 introduces a context-aware local hybrid reasoning architecture.
 
-- Local FreeToken inference provider
-- Streamed MoE token aggregation
-- GPU/VRAM telemetry and adaptive tool throttling
-- Short CLI workflow (`target`, `hunt`, `remote`, `status`)
-- Mobile Command Center screens and state management
-- Workspace/report download APIs
-- Product README and installation documentation
+- Standard local reasoning remains the default for reconnaissance and tool-output interpretation.
+- Altar-1 receives specialized code-review, exploit-proof/reproduction, and authorization-matrix anomaly contexts.
+- Router decisions are deterministic and feed the normal reasoning pipeline.
+- Altar-1 request activity is exposed through filesystem leases.
+- The Resource Governor clamps tool concurrency while Altar-1 is active.
+- Coverage includes routing, provider handling, activity leases, and resource mitigation.
