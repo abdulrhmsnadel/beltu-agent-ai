@@ -171,15 +171,30 @@ class LLMRouter:
             reasons.append("authorization-matrix anomaly signal")
             profile = Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90)
 
-        if not reasons and self._RECON.search(text):
-            reasons.append("general recon/tool-output signal")
+        context_size = len(json.dumps({
+            "observations": context.observations,
+            "assets": context.assets,
+            "api": context.api_surface,
+            "auth": context.auth_surface,
+            "authorization": context.authorization_surface,
+            "business_logic": context.business_logic_surface,
+            "findings": context.finding_surface,
+        }, ensure_ascii=True))
+        if context_size > 80_000 or len(context.observations) > 40:
+            gemini_mode = "heavy_recon_triage"
+            reasons.append("large telemetry snapshot")
+        elif self._RECON.search(text):
+            gemini_mode = "monitor_recon"
+            reasons.append("recon/tool-output signal")
+        else:
+            gemini_mode = "monitor_agent"
 
         route: RouteName = "altar1" if score >= 1.0 else "standard"
         if route == "altar1" and profile is None:
             profile = Altar1RequestProfile("altar1_specialized", temperature=0.08, max_tokens=2600, top_p=0.90)
-        if route == "standard" and not reasons:
-            reasons.append("no specialized signal; standard reasoning")
-        return RouteDecision(route, round(score, 3), tuple(reasons), profile)
+        if not reasons:
+            reasons.append("general agent monitoring")
+        return RouteDecision(route, round(score, 3), tuple(reasons), profile, gemini_mode)
 
     def complete_for_context(
         self,
