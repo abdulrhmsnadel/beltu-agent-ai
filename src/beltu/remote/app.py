@@ -211,13 +211,39 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
             approval = service.approve(approval_id, resolved_by=f"mobile:{principal.subject}", token=token)
         except (KeyError, PermissionError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        audit_id = remote_repo.audit(actor=principal.subject, action="approve", resource=f"approval:{approval_id}")
-        event = Event("remote.approval.resolved", {"approval_id": approval_id, "status": "approved"}, remote_repo.__class__.__name__)
+        queued_task_id = None
+        decision = DecisionRepository(db).get(approval.decision_id)
+        if decision is not None and orchestrator is not None:
+            tasks = TaskRepository(db)
+            existing = tasks.list_for_decision(decision.scan_id, decision.id)
+            active = [item for item in existing if item.status in {"pending", "running"}]
+            if not active:
+                task = tasks.create(
+                    decision.scan_id,
+                    "capability.execute",
+                    {"decision_id": decision.id},
+                    priority=80,
+                    max_attempts=2,
+                )
+                await orchestrator.scheduler.enqueue(task)
+                queued_task_id = task.id
+
+        audit_id = remote_repo.audit(
+            actor=principal.subject,
+            action="approve",
+            resource=f"approval:{approval_id}",
+            metadata={"decision_id": approval.decision_id, "queued_task_id": queued_task_id},
+        )
+        event = Event(
+            "remote.approval.resolved",
+            {"approval_id": approval_id, "status": "approved", "decision_id": approval.decision_id, "queued_task_id": queued_task_id},
+            remote_repo.__class__.__name__,
+        )
         if event_bus is not None:
             await event_bus.publish(event.type, event.payload)
         else:
             await event_hub._on_event(event)
-        return {"status": approval.status, "approval_id": approval.id, "audit_id": audit_id}
+        return {"status": approval.status, "approval_id": approval.id, "decision_id": approval.decision_id, "queued_task_id": queued_task_id, "audit_id": audit_id}
 
     @app.post("/v1/approvals/{approval_id}/reject")
     async def reject(approval_id: int, principal: RemotePrincipal = Depends(require_scope("approve"))):
