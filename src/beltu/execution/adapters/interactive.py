@@ -19,7 +19,9 @@ class JobFileAdapter(ToolAdapter):
 
     def _job_payload(self, request: ExecutionRequest) -> dict[str, Any]:
         options = {k: v for k, v in request.options.items() if not str(k).startswith("_")}
-        return {"target": request.target, "mode": self.job_mode, **options}
+        payload = {"target": request.target, **options}
+        payload["mode"] = self.job_mode
+        return payload
 
     def _write_job(self, request: ExecutionRequest) -> Path:
         root = Path.cwd() / "data" / "runtime" / "jobs"
@@ -69,12 +71,16 @@ class JobFileAdapter(ToolAdapter):
                     data = {"value": data}
             if not isinstance(data, dict):
                 data = {"value": data}
+            try:
+                confidence = float(row.get("confidence", 0.8))
+            except (TypeError, ValueError):
+                confidence = 0.8
             rows.append({
                 "kind": str(row["kind"]),
                 "subject": str(row["subject"]),
                 "data": data,
                 "source": str(row.get("source", self.name)),
-                "confidence": float(row.get("confidence", 0.8)),
+                "confidence": max(0.0, min(1.0, confidence)),
             })
         return rows
 
