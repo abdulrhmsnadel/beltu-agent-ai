@@ -585,6 +585,13 @@ Registered capability adapters currently include:
 | HTTPX | HTTP service verification |
 | Nmap | service discovery |
 | Nuclei | template-based candidate detection |
+| Browser | bounded Playwright UI automation |
+| HTTP Workflow | bounded request/replay sequences |
+| Session Replay | local-profile session replay |
+| API Manipulation | bounded parameter mutations |
+| Authorization Matrix | interactive principal comparison |
+| Business Logic | bounded workflow/state execution |
+| Race Condition | bounded concurrent request testing |
 
 Install only the tools you need and keep them within the scope of your authorized engagement.
 
