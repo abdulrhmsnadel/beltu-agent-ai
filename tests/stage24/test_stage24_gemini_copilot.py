@@ -173,7 +173,8 @@ def test_gemini_provider_redacts_context_and_uses_env_key(gemini_server, monkeyp
     assert meta["tool_execution"] == "local_only"
 
 
-def test_gemini_rate_limiter_blocks_second_request():
+def test_gemini_rate_limiter_blocks_second_request(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "fixture-secret-key")
     config = LLMConfig.from_mapping({
         "gemini": {
             "enabled": True,
