@@ -73,6 +73,22 @@ def extract_dotted(value: Any, path: str) -> Any:
     return current
 
 
+def redact_url(value: str) -> str:
+    """Keep route/query names useful while removing URL query values."""
+    parsed = urlparse(str(value))
+    if not parsed.scheme or not parsed.netloc:
+        return str(value)
+    if not parsed.query:
+        return parsed.geturl()
+    names = []
+    for pair in parsed.query.split("&"):
+        key = pair.split("=", 1)[0]
+        if key:
+            names.append(key + "=<REDACTED>")
+    from urllib.parse import urlencode
+    return parsed._replace(query=urlencode([(name.split("=", 1)[0], "<REDACTED>") for name in names])).geturl()
+
+
 def redact_text(value: str) -> str:
     text = str(value)
     patterns = (
