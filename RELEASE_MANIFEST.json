@@ -14,6 +14,11 @@
     "privacy_scrubber",
     "three_tier_llm_router",
     "gemini_rate_limiter",
+    "local_final_authority",
+    "gemini_cloud_copilot",
+    "privacy_scrubber",
+    "three_tier_llm_router",
+    "gemini_rate_limiter",
     "local_final_authority"
   ],
   "interactive_capabilities": [
@@ -25,7 +30,7 @@
     "business_logic_workflows",
     "race_condition_testing"
   ],
-  "tests": "128 passed",
+  "tests": "136 passed",
   "doctor": "9/9 passed",
   "gemini": {
     "model": "gemini-3.8-flash",
