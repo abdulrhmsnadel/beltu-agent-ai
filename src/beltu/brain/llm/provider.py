@@ -689,13 +689,22 @@ class GeminiCloudProvider:
                 "forbidden_categories": ["final_reporting", "exploit_payloads", "poc_code", "credential_material", "session_secrets", "direct_tool_execution", "shell_commands"],
             },
         }
+        # Screen only target-derived data. Trusted BELTU policy labels below may contain
+        # category names such as "exploit_payloads" and must not trigger the
+        # cloud data-loss prevention check.
+        target_derived = json.dumps(
+            {"goal": goal, "local_operator_snapshot": operator_snapshot, "context": payload},
+            ensure_ascii=True,
+            sort_keys=True,
+        )
+        self._filter.ensure_allowed_text(target_derived)
         serialized = json.dumps(user_payload, ensure_ascii=True, sort_keys=True)
-        self._filter.ensure_allowed_text(serialized)
         system = (
             "You are BELTU cloud co-pilot. You monitor the local security agent using only the supplied sanitized telemetry. "
             "You never execute tools and never become the final decision authority. "
             "Diagnose weak reasoning, failed steps, missing evidence, useful next checks, and when to continue, retry, correct, escalate, or stop escalation. "
-            "Return JSON only with decision, confidence, reason, focus, recommended_capability, and notes. "
+            "Return JSON only with decision, confidence, reason, focus, recommended_capability, notes, suggestions, alternative_hypotheses, and missing_evidence. "
+            "Each suggestion should identify a useful bounded improvement, such as evidence to collect, a correction, an alternate hypothesis, a retry condition, a registered capability to consider, or escalation to local deep review. "
             "Never output final vulnerability reports, exploit payloads, PoC code, credentials, or shell commands."
         )
         text, latency = self._post(system_prompt=system, user_prompt=serialized)
