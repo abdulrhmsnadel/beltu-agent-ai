@@ -236,13 +236,6 @@ class LLMRouter:
             confidence = 0.5
         reason = str(payload.get("reason", "")).strip()[:1200]
         focus = str(payload.get("focus", "")).strip()[:600]
-        recommended = payload.get("recommended_capability")
-        recommended_capability = str(recommended).strip()[:160] if recommended else None
-        if recommended_capability not in allowed_capabilities:
-            recommended_capability = None
-        raw_notes = payload.get("notes", [])
-        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
-        allowed_suggestion_kinds = {"evidence", "correction", "alternate_hypothesis", "retry", "next_capability", "escalation", "stop"}
         allowed_capabilities = {
             "asset.discovery.subdomains",
             "service.discovery",
@@ -261,6 +254,13 @@ class LLMRouter:
             "offline.business_logic.workflow_analysis",
             "offline.finding.validation",
         }
+        recommended = payload.get("recommended_capability")
+        recommended_capability = str(recommended).strip()[:160] if recommended else None
+        if recommended_capability not in allowed_capabilities:
+            recommended_capability = None
+        raw_notes = payload.get("notes", [])
+        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
+        allowed_suggestion_kinds = {"evidence", "correction", "alternate_hypothesis", "retry", "next_capability", "escalation", "stop"}
         raw_suggestions = payload.get("suggestions", [])
         parsed_suggestions: list[GeminiSuggestion] = []
         if isinstance(raw_suggestions, list):
