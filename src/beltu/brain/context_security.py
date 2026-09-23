@@ -26,11 +26,10 @@ class ReasoningContextPolicy:
 class ContextSecurityBoundary:
     """Normalize and mark target-derived context before the reasoning layer.
 
-    This is a local trust boundary, not a cloud-only scrubber. Persisted
-    observations may contain attacker-controlled text, prompt-injection-like
-    instructions, malformed Unicode, or accidental secret material. The
-    boundary converts that material into bounded data for reasoning while
-    preserving ordinary security evidence.
+    Persisted observations may contain attacker-controlled text, prompt-injection-like
+    instructions, malformed Unicode, or accidental secret material. This boundary
+    converts that material into bounded data for reasoning while preserving ordinary
+    security evidence.
     """
 
     _SENSITIVE_KEY = re.compile(
@@ -143,14 +142,14 @@ class ContextSecurityBoundary:
             business_logic_surface=self.sanitize_value(dict(context.business_logic_surface)),
             finding_surface=self.sanitize_value(dict(context.finding_surface)),
         )
-        self._fit_total_budget(sanitized)
-        return sanitized
+        return self._fit_total_budget(sanitized)
 
-    def _fit_total_budget(self, context: AgentContext) -> None:
+    def _fit_total_budget(self, context: AgentContext) -> AgentContext:
+        observations = list(context.observations)
         payload = {
             "scan_id": context.scan_id,
             "target": context.target,
-            "observations": list(context.observations),
+            "observations": observations,
             "known_hypotheses": list(context.known_hypotheses),
             "graph_nodes": list(context.graph_nodes),
             "graph_edges": list(context.graph_edges),
@@ -166,11 +165,10 @@ class ContextSecurityBoundary:
         }
         size = len(json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str))
         if size <= self.policy.max_total_chars:
-            return
+            return context
 
         # Keep the newest observations first; older observations remain in the
         # persistent store and can be recovered in a later bounded context build.
-        observations = list(context.observations)
         while observations and size > self.policy.max_total_chars:
             observations.pop(0)
             payload["observations"] = observations
@@ -178,6 +176,7 @@ class ContextSecurityBoundary:
 
         if size > self.policy.max_total_chars:
             raise ValueError("Reasoning context exceeds the configured security boundary budget")
+        return replace(context, observations=tuple(observations))
 
     def trust_instructions(self) -> str:
         return (
