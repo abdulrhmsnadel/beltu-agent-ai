@@ -58,6 +58,30 @@ class GeminiFixtureHandler(BaseHTTPRequestHandler):
                                 "focus": "state transition",
                                 "recommended_capability": "business_logic.workflow",
                                 "notes": ["preserve the state created by the previous step"],
+                                "suggestions": [
+                                    {
+                                        "kind": "correction",
+                                        "instruction": "preserve the state created by the previous step",
+                                        "reason": "the failure may come from state ordering",
+                                        "capability": "business_logic.workflow",
+                                        "confidence": 0.91,
+                                    },
+                                    {
+                                        "kind": "evidence",
+                                        "instruction": "compare the response fingerprints before escalating",
+                                        "reason": "the current evidence is incomplete",
+                                        "capability": "authorization.interactive",
+                                        "confidence": 0.82,
+                                    },
+                                    {
+                                        "kind": "alternate_hypothesis",
+                                        "instruction": "consider a state-transition inconsistency instead of assuming a single endpoint defect",
+                                        "reason": "multiple observations point to workflow state",
+                                        "confidence": 0.76,
+                                    },
+                                ],
+                                "alternative_hypotheses": ["state-transition inconsistency"],
+                                "missing_evidence": ["response fingerprint comparison"],
                             })
                         }]
                     },
@@ -233,6 +257,11 @@ def test_router_uses_gemini_advice_but_local_operator_finishes(gemini_server, mo
     assert result.text == '{"summary":"final","hypotheses":[],"actions":[]}'
     assert result.gemini_advice is not None
     assert result.gemini_advice.decision == "correct"
+    assert len(result.gemini_advice.suggestions) == 3
+    assert result.gemini_advice.suggestions[0].kind == "correction"
+    assert result.gemini_advice.suggestions[1].capability == "authorization.interactive"
+    assert result.gemini_advice.alternative_hypotheses == ("state-transition inconsistency",)
+    assert result.gemini_advice.missing_evidence == ("response fingerprint comparison",)
     assert result.provider_name == "standard"
     assert len(standard.calls) == 2
     assert "Gemini cloud advisory" in standard.calls[1]
