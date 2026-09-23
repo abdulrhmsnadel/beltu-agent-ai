@@ -12,7 +12,7 @@ from beltu.brain.llm.provider import (
     OpenAICompatibleProvider,
 )
 from beltu.brain.llm.reasoner import LLMReasoningEngine, StaticProvider
-from beltu.brain.llm.router import GeminiAdvice, LLMRouter, RouteDecision, RoutedCompletion
+from beltu.brain.llm.router import GeminiAdvice, GeminiSuggestion, LLMRouter, RouteDecision, RoutedCompletion
 from beltu.brain.llm.privacy import CloudDataPolicy, CloudPrivacyFilter, CloudSanitizationError
 from beltu.brain.llm.schemas import LLMReasoningResponse, LLMRunResult
 
@@ -29,6 +29,7 @@ __all__ = [
     "CloudPrivacyFilter",
     "CloudSanitizationError",
     "GeminiAdvice",
+    "GeminiSuggestion",
     "Altar1LocalProvider",
     "Altar1RequestProfile",
     "DisabledLLMProvider",
