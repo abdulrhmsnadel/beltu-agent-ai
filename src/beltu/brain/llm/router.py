@@ -33,6 +33,16 @@ class RouteDecision:
 
 
 @dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True)
+class GeminiSuggestion:
+    kind: str
+    instruction: str
+    reason: str
+    capability: str | None = None
+    confidence: float = 0.5
+
+
+@dataclass(frozen=True, slots=True)
 class GeminiAdvice:
     decision: GeminiDecision
     confidence: float
@@ -40,7 +50,7 @@ class GeminiAdvice:
     focus: str
     recommended_capability: str | None
     notes: tuple[str, ...] = ()
-    suggestions: tuple[str, ...] = ()
+    suggestions: tuple[GeminiSuggestion, ...] = ()
     alternative_hypotheses: tuple[str, ...] = ()
     missing_evidence: tuple[str, ...] = ()
     status: str = "ok"
@@ -226,6 +236,13 @@ class LLMRouter:
             confidence = 0.5
         reason = str(payload.get("reason", "")).strip()[:1200]
         focus = str(payload.get("focus", "")).strip()[:600]
+        recommended = payload.get("recommended_capability")
+        recommended_capability = str(recommended).strip()[:160] if recommended else None
+        if recommended_capability not in allowed_capabilities:
+            recommended_capability = None
+        raw_notes = payload.get("notes", [])
+        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
+        allowed_suggestion_kinds = {"evidence", "correction", "alternate_hypothesis", "retry", "next_capability", "escalation", "stop"}
         allowed_capabilities = {
             "asset.discovery.subdomains",
             "service.discovery",
@@ -244,14 +261,29 @@ class LLMRouter:
             "offline.business_logic.workflow_analysis",
             "offline.finding.validation",
         }
-        recommended = payload.get("recommended_capability")
-        recommended_capability = str(recommended).strip()[:160] if recommended else None
-        if recommended_capability not in allowed_capabilities:
-            recommended_capability = None
-        raw_notes = payload.get("notes", [])
-        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
         raw_suggestions = payload.get("suggestions", [])
-        suggestions = tuple(str(item).strip()[:700] for item in raw_suggestions[:10] if str(item).strip()) if isinstance(raw_suggestions, list) else ()
+        parsed_suggestions: list[GeminiSuggestion] = []
+        if isinstance(raw_suggestions, list):
+            for item in raw_suggestions[:10]:
+                if not isinstance(item, dict):
+                    continue
+                kind = str(item.get("kind", "evidence")).strip()
+                if kind not in allowed_suggestion_kinds:
+                    kind = "evidence"
+                instruction = str(item.get("instruction", "")).strip()[:700]
+                reason_item = str(item.get("reason", "")).strip()[:700]
+                capability_item = str(item.get("capability", "")).strip()[:160] if item.get("capability") else None
+                if capability_item not in allowed_capabilities:
+                    capability_item = None
+                try:
+                    suggestion_confidence = max(0.0, min(1.0, float(item.get("confidence", 0.5))))
+                except (TypeError, ValueError):
+                    suggestion_confidence = 0.5
+                if instruction:
+                    parsed_suggestions.append(
+                        GeminiSuggestion(kind, instruction, reason_item, capability_item, suggestion_confidence)
+                    )
+        suggestions = tuple(parsed_suggestions)
         raw_hypotheses = payload.get("alternative_hypotheses", [])
         alternative_hypotheses = tuple(str(item).strip()[:700] for item in raw_hypotheses[:8] if str(item).strip()) if isinstance(raw_hypotheses, list) else ()
         raw_missing = payload.get("missing_evidence", [])
@@ -346,7 +378,16 @@ class LLMRouter:
                     "focus": gemini_advice.focus,
                     "recommended_capability": gemini_advice.recommended_capability,
                     "notes": list(gemini_advice.notes),
-                    "suggestions": list(gemini_advice.suggestions),
+                    "suggestions": [
+                        {
+                            "kind": item.kind,
+                            "instruction": item.instruction,
+                            "reason": item.reason,
+                            "capability": item.capability,
+                            "confidence": item.confidence,
+                        }
+                        for item in gemini_advice.suggestions
+                    ],
                     "alternative_hypotheses": list(gemini_advice.alternative_hypotheses),
                     "missing_evidence": list(gemini_advice.missing_evidence),
                 }
