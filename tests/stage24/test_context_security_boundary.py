@@ -69,9 +69,9 @@ def test_boundary_removes_invisible_prompt_manipulation_controls():
 
 
 def test_boundary_caps_strings_and_context_budget():
-    policy = ReasoningContextPolicy(max_string_chars=128, max_total_chars=3_000)
+    policy = ReasoningContextPolicy(max_string_chars=128, max_total_chars=700)
     boundary = ContextSecurityBoundary(policy)
-    observations = tuple({"data": {"body": "x" * 2_000}, "source": "http"} for _ in range(5))
+    observations = tuple({"data": {"body": "x" * 2_000}, "source": "http"} for _ in range(10))
     sanitized = boundary.sanitize(_context(observations=observations))
 
     assert len(sanitized.observations) < len(observations)
