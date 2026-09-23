@@ -423,6 +423,18 @@ class LLMRouter:
                         "focus": gemini_advice.focus,
                         "recommended_capability": gemini_advice.recommended_capability,
                         "notes": list(gemini_advice.notes),
+                        "suggestions": [
+                            {
+                                "kind": item.kind,
+                                "instruction": item.instruction,
+                                "reason": item.reason,
+                                "capability": item.capability,
+                                "confidence": item.confidence,
+                            }
+                            for item in gemini_advice.suggestions
+                        ],
+                        "alternative_hypotheses": list(gemini_advice.alternative_hypotheses),
+                        "missing_evidence": list(gemini_advice.missing_evidence),
                     }, ensure_ascii=True),
                 ])
             if altar_review is not None:
