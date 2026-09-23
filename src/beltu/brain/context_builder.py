@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from beltu.brain.attack_graph import AttackSurfaceGraph
+from beltu.brain.context_security import ContextSecurityBoundary
 from beltu.brain.schemas import AgentContext
-from beltu.storage.models.brain import Hypothesis, Observation
 from beltu.storage.repositories.hypothesis_repository import HypothesisRepository
 from beltu.storage.repositories.observation_repository import ObservationRepository
 from beltu.storage.repositories.scan_repository import ScanRepository
@@ -31,6 +31,7 @@ class ContextBuilder:
         authorization_intelligence: AccessControlIntelligenceService | None = None,
         business_logic_intelligence: BusinessLogicIntelligenceService | None = None,
         finding_intelligence: FindingIntelligenceService | None = None,
+        context_security: ContextSecurityBoundary | None = None,
     ) -> None:
         self.scans = scans
         self.targets = targets
@@ -44,6 +45,7 @@ class ContextBuilder:
         self.authorization_intelligence = authorization_intelligence
         self.business_logic_intelligence = business_logic_intelligence
         self.finding_intelligence = finding_intelligence
+        self.context_security = context_security or ContextSecurityBoundary()
 
     def build(self, scan_id: int) -> AgentContext:
         scan = self.scans.get(scan_id)
@@ -97,7 +99,7 @@ class ContextBuilder:
         finding_payload = {}
         if self.finding_intelligence is not None:
             finding_payload = self.finding_intelligence.context_payload(scan_id, limit=100)
-        return AgentContext(
+        raw_context = AgentContext(
             scan_id=scan_id,
             target=target.value,
             observations=obs_payload,
@@ -114,3 +116,6 @@ class ContextBuilder:
             business_logic_surface=dict(business_logic_payload),
             finding_surface=dict(finding_payload),
         )
+        # Mandatory trust boundary: no raw observation/intelligence text leaves
+        # ContextBuilder for the reasoning layer.
+        return self.context_security.sanitize(raw_context)
