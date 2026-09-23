@@ -89,130 +89,230 @@ class LLMRouter:
         r"\b(?:authorization[ _-]?matrix|access[ _-]?control[ _-]?matrix|permission[ _-]?matrix|authz[ _-]?matrix|role[ _-]?permission|privilege[ _-]?matrix|authorization[ _-]?anomal(?:y|ies)|authz[ _-]?anomal(?:y|ies))\b",
         re.I,
     )
-    _RECON_HEAVY = re.compile(
-        r"\b(?:recon|reconnaissance|subdomain|asset|endpoint|directory|fuzz|crawler|crawl|amass|gau|katana|wayback|httpx|wordlist|dedup|parse|triage|log)\b",
-        re.I,
-    )
-    _ROUTINE = re.compile(
-        r"\b(?:state|lifecycle|orchestration|serialize|normaliz|summar|heartbeat|status|queue|bookkeep|housekeep)\b",
+    _RECON = re.compile(
+        r"\b(?:recon|reconnaissance|subdomain|asset[ _-]?discovery|http[ _-]?probe|tool[ _-]?output|nmap|nuclei|subfinder|httpx|endpoint[ _-]?mapping|service[ _-]?discovery)\b",
         re.I,
     )
 
     def __init__(
         self,
+        standard_provider: LLMProvider | None = None,
+        altar_provider: Altar1LocalProvider | None = None,
+        gemini_provider: GeminiCloudProvider | None = None,
         *,
-        standard: LLMProvider,
-        altar1: Altar1LocalProvider | None = None,
-        gemini: GeminiCloudProvider | None = None,
         enabled: bool = True,
     ) -> None:
-        self.standard = standard
-        self.altar1 = altar1
-        self.gemini = gemini
+        self.standard_provider = standard_provider or DisabledLLMProvider()
+        self.altar_provider = altar_provider or DisabledLLMProvider()  # type: ignore[assignment]
+        self.gemini_provider = gemini_provider or DisabledLLMProvider()  # type: ignore[assignment]
         self.enabled = enabled
+        self.last_decision: RouteDecision | None = None
+        self.last_advice: GeminiAdvice | None = None
         self.last_trace: dict[str, Any] = {}
 
+    def available(self) -> bool:
+        providers = (self.standard_provider, self.altar_provider, self.gemini_provider)
+        return self.enabled and any(not isinstance(p, DisabledLLMProvider) for p in providers)
+
     @staticmethod
-    def _joined(context: AgentContext) -> str:
-        parts: list[str] = [
-            str(context.target),
-            json.dumps(context.observations, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.known_hypotheses, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.api_surface, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.auth_surface, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.authorization_surface, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.business_logic_surface, ensure_ascii=True, sort_keys=True, default=str),
-            json.dumps(context.finding_surface, ensure_ascii=True, sort_keys=True, default=str),
-        ]
-        return " ".join(parts)
+    def _flatten_values(value: Any) -> list[str]:
+        out: list[str] = []
+        if isinstance(value, str):
+            out.append(value)
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                out.append(str(key))
+                out.extend(LLMRouter._flatten_values(item))
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                out.extend(LLMRouter._flatten_values(item))
+        elif value is not None:
+            out.append(str(value))
+        return out
+
+    @classmethod
+    def _context_text(cls, context: AgentContext) -> str:
+        pieces: list[str] = [context.target]
+        pieces.extend(cls._flatten_values(context.observations))
+        pieces.extend(cls._flatten_values(context.known_hypotheses))
+        pieces.extend(cls._flatten_values(context.api_surface))
+        pieces.extend(cls._flatten_values(context.auth_surface))
+        pieces.extend(cls._flatten_values(context.authorization_surface))
+        pieces.extend(cls._flatten_values(context.business_logic_surface))
+        pieces.extend(cls._flatten_values(context.finding_surface))
+        pieces.extend(cls._flatten_values(context.surface_priorities))
+        return " ".join(pieces)
+
+    @staticmethod
+    def _contains_structured_signal(container: dict[str, Any], names: tuple[str, ...]) -> bool:
+        needles = {item.lower().replace("-", "_").replace(" ", "_") for item in names}
+        for key in container:
+            normalized = str(key).lower().replace("-", "_").replace(" ", "_")
+            if normalized in needles:
+                return True
+        return False
 
     def classify(self, context: AgentContext) -> RouteDecision:
-        if not self.enabled:
-            return RouteDecision("standard", 0.0, ("routing_disabled",), gemini_mode="off")
-        joined = self._joined(context)
+        text = self._context_text(context)
         reasons: list[str] = []
-        if self._AUTHZ_MATRIX.search(joined):
-            reasons.append("authorization_matrix_context")
-        if self._CODE_REVIEW.search(joined):
-            reasons.append("source_or_code_review_context")
-        if self._EXPLOIT_PROOF.search(joined):
-            reasons.append("exploit_verification_context")
-        specialist = bool(reasons)
-        if specialist and self.altar1 is not None:
-            return RouteDecision("altar1", 1.0, tuple(reasons), self._altar_profile(context), gemini_mode="off")
-        if specialist:
-            reasons.append("altar1_unavailable")
-        if self._RECON_HEAVY.search(joined):
-            reasons.append("recon_heavy_context")
-        if self._ROUTINE.search(joined) and not self._RECON_HEAVY.search(joined):
-            reasons.append("routine_orchestration_context")
-        gemini_mode = "monitor" if self.gemini is not None else "off"
-        return RouteDecision("standard", 0.5, tuple(reasons or ["general_context"]), gemini_mode=gemini_mode)
+        score = 0.0
+        profile: Altar1RequestProfile | None = None
 
-    def _altar_profile(self, context: AgentContext) -> Altar1RequestProfile:
-        joined = self._joined(context).lower()
-        if self._CODE_REVIEW.search(joined):
-            return Altar1RequestProfile("code_review", 0.05, 3072, 0.95)
-        if self._EXPLOIT_PROOF.search(joined):
-            return Altar1RequestProfile("exploit_validation", 0.05, 4096, 0.95)
-        return Altar1RequestProfile("authorization_anomaly", 0.05, 3072, 0.95)
-
-    @staticmethod
-    def _advisory_system() -> str:
-        return (
-            "You are BELTU's cloud co-pilot. You receive only sanitized operational context. "
-            "You are advisory-only: never execute tools, never emit shell commands, exploit payloads, "
-            "PoC code, credentials, session secrets, or a final report. Return JSON matching the "
-            "BELTU advisory contract. Focus on diagnosing the current agent state, missing evidence, "
-            "wrong paths, retry/correction conditions, continuation, or escalation to the local deep reviewer."
+        structured_code = self._contains_structured_signal(
+            context.finding_surface,
+            ("code_review", "source_review", "static_analysis", "code_audit"),
+        )
+        structured_proof = self._contains_structured_signal(
+            context.finding_surface,
+            ("exploit_proof", "proof_of_concept", "reproduction", "poc"),
+        )
+        structured_authz = any(
+            self._contains_structured_signal(container, ("authorization_matrix", "access_control_matrix", "permission_matrix", "anomalies"))
+            for container in (context.authorization_surface, context.finding_surface)
         )
 
+        if structured_code or self._CODE_REVIEW.search(text):
+            score += 1.0
+            reasons.append("code-review signal")
+            profile = Altar1RequestProfile("code_review", temperature=0.05, max_tokens=2600, top_p=0.90)
+        if structured_proof or self._EXPLOIT_PROOF.search(text):
+            score += 1.2
+            reasons.append("exploit-proof/reproduction signal")
+            profile = Altar1RequestProfile("exploit_proof", temperature=0.10, max_tokens=3200, top_p=0.92)
+        if structured_authz or self._AUTHZ_MATRIX.search(text):
+            score += 1.1
+            reasons.append("authorization-matrix anomaly signal")
+            profile = Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90)
+
+        context_size = len(json.dumps({
+            "observations": context.observations,
+            "assets": context.assets,
+            "api": context.api_surface,
+            "auth": context.auth_surface,
+            "authorization": context.authorization_surface,
+            "business_logic": context.business_logic_surface,
+            "findings": context.finding_surface,
+        }, ensure_ascii=True))
+        if context_size > 80_000 or len(context.observations) > 40:
+            gemini_mode = "heavy_recon_triage"
+            reasons.append("large telemetry snapshot")
+        elif self._RECON.search(text):
+            gemini_mode = "monitor_recon"
+            reasons.append("recon/tool-output signal")
+        else:
+            gemini_mode = "monitor_agent"
+
+        route: RouteName = "altar1" if score >= 1.0 else "standard"
+        if route == "altar1" and profile is None:
+            profile = Altar1RequestProfile("altar1_specialized", temperature=0.08, max_tokens=2600, top_p=0.90)
+        if not reasons:
+            reasons.append("general agent monitoring")
+        return RouteDecision(route, round(score, 3), tuple(reasons), profile, gemini_mode)
+
     @staticmethod
-    def _safe_json(value: Any, limit: int = 12000) -> str:
-        return json.dumps(value, ensure_ascii=True, sort_keys=True, default=str)[:limit]
-
-    def _parse_advice(self, raw: str) -> GeminiAdvice:
+    def _parse_gemini_advice(raw: str) -> GeminiAdvice:
+        cleaned = raw.strip()
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+            if len(lines) >= 3:
+                cleaned = "\n".join(lines[1:-1]).strip()
         try:
-            payload = json.loads(raw)
+            payload = json.loads(cleaned)
         except json.JSONDecodeError:
-            return GeminiAdvice("observe", 0.0, "Gemini returned non-JSON advisory content", "format_error", None, status="invalid")
-
+            start, end = cleaned.find("{"), cleaned.rfind("}")
+            if start < 0 or end <= start:
+                raise ValueError("Gemini advisory response did not contain JSON")
+            payload = json.loads(cleaned[start:end + 1])
         if not isinstance(payload, dict):
-            return GeminiAdvice("observe", 0.0, "Gemini advisory was not an object", "format_error", None, status="invalid")
-        decision = str(payload.get("decision", "observe"))
+            raise ValueError("Gemini advisory root must be an object")
         allowed = {"continue", "retry", "correct", "escalate_to_deep_review", "stop_escalation", "observe"}
+        decision = str(payload.get("decision", "observe")).strip()
         if decision not in allowed:
             decision = "observe"
-        confidence = payload.get("confidence", 0.5)
         try:
-            confidence = min(1.0, max(0.0, float(confidence)))
+            confidence = max(0.0, min(1.0, float(payload.get("confidence", 0.5))))
         except (TypeError, ValueError):
             confidence = 0.5
-        reason = str(payload.get("reason", ""))[:4000]
-        focus = str(payload.get("focus", ""))[:2000]
-        capability = payload.get("recommended_capability")
-        capability = str(capability)[:200] if capability not in (None, "") else None
-        notes = tuple(str(x)[:1000] for x in payload.get("notes", [])[:10]) if isinstance(payload.get("notes"), list) else ()
-        suggestions: list[GeminiSuggestion] = []
-        if isinstance(payload.get("suggestions"), list):
-            for item in payload["suggestions"][:10]:
+        reason = str(payload.get("reason", "")).strip()[:1200]
+        focus = str(payload.get("focus", "")).strip()[:600]
+        allowed_capabilities = {
+            "asset.discovery.subdomains",
+            "service.discovery",
+            "web.verify",
+            "browser.automation",
+            "http.workflow",
+            "session.replay",
+            "api.manipulation",
+            "authorization.interactive",
+            "business_logic.workflow",
+            "race_condition.test",
+            "offline.api.structure_analysis",
+            "offline.auth.surface_analysis",
+            "offline.access_control.surface_analysis",
+            "offline.authorization.matrix_analysis",
+            "offline.business_logic.workflow_analysis",
+            "offline.finding.validation",
+        }
+        recommended = payload.get("recommended_capability")
+        recommended_capability = str(recommended).strip()[:160] if recommended else None
+        if recommended_capability not in allowed_capabilities:
+            recommended_capability = None
+        raw_notes = payload.get("notes", [])
+        notes = tuple(str(item).strip()[:400] for item in raw_notes[:8]) if isinstance(raw_notes, list) else ()
+        allowed_suggestion_kinds = {"evidence", "correction", "alternate_hypothesis", "retry", "next_capability", "escalation", "stop"}
+        raw_suggestions = payload.get("suggestions", [])
+        parsed_suggestions: list[GeminiSuggestion] = []
+        if isinstance(raw_suggestions, list):
+            for item in raw_suggestions[:10]:
                 if not isinstance(item, dict):
                     continue
-                suggestions.append(
-                    GeminiSuggestion(
-                        kind=str(item.get("kind", "observe"))[:100],
-                        instruction=str(item.get("instruction", ""))[:1500],
-                        reason=str(item.get("reason", ""))[:1500],
-                        capability=str(item.get("capability"))[:200] if item.get("capability") else None,
-                        confidence=min(1.0, max(0.0, float(item.get("confidence", 0.5)))),
+                kind = str(item.get("kind", "evidence")).strip()
+                if kind not in allowed_suggestion_kinds:
+                    kind = "evidence"
+                instruction = str(item.get("instruction", "")).strip()[:700]
+                reason_item = str(item.get("reason", "")).strip()[:700]
+                capability_item = str(item.get("capability", "")).strip()[:160] if item.get("capability") else None
+                if capability_item not in allowed_capabilities:
+                    capability_item = None
+                try:
+                    suggestion_confidence = max(0.0, min(1.0, float(item.get("confidence", 0.5))))
+                except (TypeError, ValueError):
+                    suggestion_confidence = 0.5
+                if instruction:
+                    parsed_suggestions.append(
+                        GeminiSuggestion(kind, instruction, reason_item, capability_item, suggestion_confidence)
                     )
-                )
-        alternatives = tuple(str(x)[:1500] for x in payload.get("alternative_hypotheses", [])[:10]) if isinstance(payload.get("alternative_hypotheses"), list) else ()
-        missing = tuple(str(x)[:1500] for x in payload.get("missing_evidence", [])[:10]) if isinstance(payload.get("missing_evidence"), list) else ()
-        forbidden = re.compile(r"(?i)(?:\b(?:password|secret|session|cookie|authorization)\b.{0,40}(?:=|:)\s*\S+|(?:curl|wget|python|bash|sh|powershell)\b|-----BEGIN .*PRIVATE KEY-----)")
-        if forbidden.search(raw):
-            return GeminiAdvice("observe", 0.0, "Gemini advisory contained blocked material", "policy_block", None, status="invalid")
-        return GeminiAdvice(decision, confidence, reason, focus, capability, notes, tuple(suggestions), alternatives, missing, status="ok")
+        suggestions = tuple(parsed_suggestions)
+        raw_hypotheses = payload.get("alternative_hypotheses", [])
+        alternative_hypotheses = tuple(str(item).strip()[:700] for item in raw_hypotheses[:8] if str(item).strip()) if isinstance(raw_hypotheses, list) else ()
+        raw_missing = payload.get("missing_evidence", [])
+        missing_evidence = tuple(str(item).strip()[:500] for item in raw_missing[:10] if str(item).strip()) if isinstance(raw_missing, list) else ()
+        return GeminiAdvice(
+            decision,
+            confidence,
+            reason,
+            focus,
+            recommended_capability,
+            notes,
+            suggestions,
+            alternative_hypotheses,
+            missing_evidence,
+        )
+
+    def _primary_local(self, *, decision: RouteDecision, system_prompt: str, user_prompt: str) -> tuple[str, float, str, str]:
+        if not isinstance(self.standard_provider, DisabledLLMProvider):
+            text, latency = self.standard_provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
+            return text, latency, self.standard_provider.name, self.standard_provider.model
+        if decision.route == "altar1" and not isinstance(self.altar_provider, DisabledLLMProvider):
+            profile = decision.profile or Altar1RequestProfile("altar1_primary", 0.08, 2600, 0.90)
+            text, latency = self.altar_provider.complete_with_profile(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                profile=profile,
+                route="altar1_primary",
+            )
+            return text, latency, self.altar_provider.name, self.altar_provider.model
+        raise RuntimeError("No local LLM provider is available")
 
     def complete_for_context(
         self,
@@ -222,67 +322,152 @@ class LLMRouter:
         user_prompt: str,
     ) -> RoutedCompletion:
         decision = self.classify(context)
-        trace: dict[str, Any] = {"primary_route": decision.route, "reasons": decision.reasons, "gemini": None, "altar1": None}
-        primary = self.standard
-        profile = None
-        if decision.route == "altar1" and self.altar1 is not None:
-            primary = self.altar1
-            profile = decision.profile
+        self.last_decision = decision
+        self.last_advice = None
+        trace: dict[str, Any] = {
+            "primary_role": "standard_local_operator",
+            "gemini_role": "cloud_co_pilot",
+            "altar1_role": "local_deep_reviewer",
+            "gemini_mode": decision.gemini_mode,
+            "gemini_status": "not_called",
+        }
 
-        started = 0.0
-        if profile is not None:
-            text, latency = primary.complete_with_profile(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                profile=profile,
-                route="altar1_specialist",
-            )
-        else:
-            started = 0.0
-            text, latency = primary.complete(system_prompt=system_prompt, user_prompt=user_prompt)
-
-        advice = None
-        if decision.route == "standard" and self.gemini is not None:
-            try:
-                advice_raw, advice_latency, advice_meta = self.gemini.advise(
-                    context=context,
-                    local_draft=text,
-                    mode=decision.gemini_mode,
-                    goal="Monitor the current BELTU cycle and identify useful corrections, retries, continuation, missing evidence, or local deep-review escalation.",
-                )
-                advice = self._parse_advice(advice_raw)
-                trace["gemini"] = {
-                    "status": advice.status,
-                    "latency_ms": advice_latency,
-                    **advice_meta,
-                }
-            except (GeminiRateLimitError, GeminiSafetyBlockedError, GeminiCloudError, CloudSanitizationError) as exc:
-                trace["gemini"] = {"status": "fallback", "error_class": type(exc).__name__, "reason": str(exc)[:500]}
-            except Exception as exc:
-                trace["gemini"] = {"status": "fallback", "error_class": type(exc).__name__, "reason": str(exc)[:500]}
-
-        self.last_trace = trace
-        if advice is not None:
-            trace["gemini_advice"] = {
-                "decision": advice.decision,
-                "confidence": advice.confidence,
-                "focus": advice.focus,
-                "recommended_capability": advice.recommended_capability,
-                "suggestion_count": len(advice.suggestions),
-            }
-
-        # Gemini never replaces the primary local response. Its advice is returned
-        # as separate metadata for the next local reasoning cycle.
-        return RoutedCompletion(
-            text=text,
-            latency_ms=latency,
-            provider_name=getattr(primary, "name", decision.route),
-            model=getattr(primary, "model", decision.route),
+        local_text, latency, provider_name, model = self._primary_local(
             decision=decision,
-            gemini_advice=advice,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+        )
+
+        gemini_advice: GeminiAdvice | None = None
+        gemini_latency = 0.0
+        if not isinstance(self.gemini_provider, DisabledLLMProvider):
+            try:
+                advisory_raw, gemini_latency, meta = self.gemini_provider.advise(
+                    context=context,
+                    local_draft=local_text,
+                    mode=decision.gemini_mode,
+                    goal="monitor the agent, diagnose failed or weak reasoning, and identify useful evidence or a bounded next capability",
+                )
+                gemini_advice = self._parse_gemini_advice(advisory_raw)
+                trace.update(meta)
+                trace["gemini_status"] = "ok"
+                trace["gemini_decision"] = gemini_advice.decision
+            except GeminiRateLimitError as exc:
+                trace["gemini_status"] = "fallback_to_standard_rate_limit"
+                trace["gemini_error"] = str(exc)[:500]
+            except GeminiSafetyBlockedError as exc:
+                trace["gemini_status"] = "fallback_to_standard_safety_block"
+                trace["gemini_error"] = str(exc)[:500]
+            except (GeminiCloudError, CloudSanitizationError, ValueError) as exc:
+                trace["gemini_status"] = "fallback_to_standard"
+                trace["gemini_error"] = str(exc)[:500]
+            except Exception as exc:
+                trace["gemini_status"] = "fallback_to_standard"
+                trace["gemini_error"] = str(exc)[:500]
+
+        altar_review: str | None = None
+        altar_latency = 0.0
+        if decision.route == "altar1" and not isinstance(self.altar_provider, DisabledLLMProvider):
+            advice_payload = {}
+            if gemini_advice is not None:
+                advice_payload = {
+                    "decision": gemini_advice.decision,
+                    "confidence": gemini_advice.confidence,
+                    "reason": gemini_advice.reason,
+                    "focus": gemini_advice.focus,
+                    "recommended_capability": gemini_advice.recommended_capability,
+                    "notes": list(gemini_advice.notes),
+                    "suggestions": [
+                        {
+                            "kind": item.kind,
+                            "instruction": item.instruction,
+                            "reason": item.reason,
+                            "capability": item.capability,
+                            "confidence": item.confidence,
+                        }
+                        for item in gemini_advice.suggestions
+                    ],
+                    "alternative_hypotheses": list(gemini_advice.alternative_hypotheses),
+                    "missing_evidence": list(gemini_advice.missing_evidence),
+                }
+            reviewer_prompt = (
+                "Review the local operator draft and Gemini advisory below. "
+                "You are a local deep security reviewer. Return concise review text only. "
+                "Do not execute tools.\\n\\nLOCAL DRAFT:\\n" + local_text[:18000] +
+                "\\n\\nGEMINI ADVISORY:\\n" + json.dumps(advice_payload, ensure_ascii=True)
+            )
+            profile = decision.profile or Altar1RequestProfile("altar1_review", 0.08, 2800, 0.90)
+            try:
+                altar_review, altar_latency = self.altar_provider.complete_with_profile(
+                    system_prompt=system_prompt,
+                    user_prompt=reviewer_prompt,
+                    profile=profile,
+                    route="altar1_review",
+                )
+                trace["altar_status"] = "ok"
+            except Exception as exc:
+                trace["altar_status"] = "failed"
+                trace["altar_error"] = str(exc)[:500]
+
+        final_text = local_text
+        if gemini_advice is not None or altar_review is not None:
+            sections = [user_prompt, "", "BELTU REVIEW PASS - LOCAL OPERATOR IS FINAL AUTHORITY."]
+            if gemini_advice is not None:
+                sections.extend([
+                    "Gemini cloud advisory (sanitized and untrusted):",
+                    json.dumps({
+                        "decision": gemini_advice.decision,
+                        "confidence": gemini_advice.confidence,
+                        "reason": gemini_advice.reason,
+                        "focus": gemini_advice.focus,
+                        "recommended_capability": gemini_advice.recommended_capability,
+                        "notes": list(gemini_advice.notes),
+                        "suggestions": [
+                            {
+                                "kind": item.kind,
+                                "instruction": item.instruction,
+                                "reason": item.reason,
+                                "capability": item.capability,
+                                "confidence": item.confidence,
+                            }
+                            for item in gemini_advice.suggestions
+                        ],
+                        "alternative_hypotheses": list(gemini_advice.alternative_hypotheses),
+                        "missing_evidence": list(gemini_advice.missing_evidence),
+                    }, ensure_ascii=True),
+                ])
+            if altar_review is not None:
+                sections.extend(["Altar-1 local deep review:", altar_review[:16000]])
+            sections.append("Choose the final BELTU hypotheses and actions yourself. Reviewers only provide advisory evidence.")
+            try:
+                if not isinstance(self.standard_provider, DisabledLLMProvider):
+                    final_text, final_latency = self.standard_provider.complete(
+                        system_prompt=system_prompt,
+                        user_prompt="\\n".join(sections),
+                    )
+                    latency += final_latency
+                    trace["final_local_pass"] = True
+            except Exception as exc:
+                trace["final_local_pass"] = False
+                trace["final_local_error"] = str(exc)[:500]
+
+        total_latency = latency + gemini_latency + altar_latency
+        trace["latency_ms"] = round(total_latency, 2)
+        self.last_advice = gemini_advice
+        self.last_trace = trace
+        return RoutedCompletion(
+            final_text,
+            round(total_latency, 2),
+            provider_name,
+            model,
+            decision,
+            gemini_advice=gemini_advice,
+            altar_review=altar_review,
             trace=trace,
         )
 
+    # Backward-compatible provider-shaped interface for callers that don't pass context.
     def complete(self, *, system_prompt: str, user_prompt: str) -> tuple[str, float]:
-        provider = self.standard
-        return provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
+        text, latency = self.standard_provider.complete(system_prompt=system_prompt, user_prompt=user_prompt)
+        self.last_decision = RouteDecision("standard", 0.0, ("no context supplied",), None)
+        return text, latency
