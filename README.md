@@ -1110,7 +1110,7 @@ Run Python syntax compilation:
 python -m compileall -q src
 ```
 
-The 1.2.0 multi-model coverage is under:
+The 1.3.0 multi-model and Gemini coverage is under:
 
 ```text
 tests/stage22/test_stage22_multi_model.py
