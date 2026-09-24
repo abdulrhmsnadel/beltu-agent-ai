@@ -321,6 +321,9 @@ This validates the target against the configured scope and stores it in BELTU's 
 
 ```bash
 beltu hunt your-authorized-domain.example
+
+# Validate scope, DB and local AI readiness without creating a scan
+beltu hunt your-authorized-domain.example --check
 ```
 
 A hunt creates/continues persistent scan state and lets the agent reason over observations, hypotheses, capabilities, and previous scan state.
@@ -409,7 +412,7 @@ The feedback loop uses the new observations to update hypotheses and generate th
 
 # Multi-model brain — v1.3.0
 
-BELTU 1.2.0 adds a deterministic **Multi-Model LLM Router**.
+BELTU 1.3.0 adds a deterministic **Multi-Model LLM Router**.
 
 ```text
                     AgentContext
