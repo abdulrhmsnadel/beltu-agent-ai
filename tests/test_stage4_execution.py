@@ -4,6 +4,7 @@ import asyncio
 from pathlib import Path
 
 from beltu.common.enums import ScanStatus
+from beltu.common.exceptions import ScopeViolation
 from beltu.execution.adapters.base import ToolAdapter
 from beltu.execution.capability_dispatcher import CapabilityDispatcher
 from beltu.execution.models import ExecutionRequest
@@ -82,7 +83,7 @@ def test_dispatcher_executes_argv_without_shell_and_persists_observation(tmp_pat
     assert len(observations.list_for_scan(scan.id)) == 1
 
 
-def test_scan_target_integrity_is_checked_before_execution(tmp_path: Path):
+def test_scope_is_checked_before_execution(tmp_path: Path):
     dispatcher, _, scan = build(tmp_path)
 
     async def run():
@@ -90,10 +91,9 @@ def test_scan_target_integrity_is_checked_before_execution(tmp_path: Path):
 
     try:
         asyncio.run(run())
-    except ValueError as exc:
-        assert "does not match the scan's registered target" in str(exc)
+    except ScopeViolation:
         return
-    raise AssertionError("mismatched scan target was not rejected")
+    raise AssertionError("out-of-scope execution was not rejected")
 
 
 def test_approval_metadata_blocks_execution(tmp_path: Path):
