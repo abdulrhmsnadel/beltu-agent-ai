@@ -318,10 +318,11 @@ def hunt(
             await orchestrator.scheduler.queue.join()
             final_scan = scans.get(scan.id)
             final_task = tasks.get(task.id)
-            outstanding = [
-                item.id for item in decisions.list_for_scan(scan.id)
-                if item.status in {"approval_required", "pending_approval"}
-            ]
+            outstanding = []
+            for item in decisions.list_for_scan(scan.id):
+                if item.status in {"approval_required", "pending_approval"}:
+                    request = approvals.request_for_decision(item.id, channel="cli")
+                    outstanding.append(request.id)
             return scan.id, task.id, final_scan.status if final_scan else (final_task.status if final_task else "unknown"), outstanding
         finally:
             await orchestrator.stop()
@@ -336,7 +337,7 @@ def hunt(
         raise typer.Exit(code=1)
     console.print(f"BELTU hunt session: target={value} scan=#{scan_id} task=#{task_id} status={scan_status}")
     if outstanding:
-        console.print(f"[yellow]Approval-gated decisions waiting:[/yellow] {len(outstanding)}")
+        console.print(f"[yellow]Approval requests created/waiting:[/yellow] {len(outstanding)}")
         console.print("Run: beltu approval list")
     else:
         console.print("[green]No approval-gated decisions are waiting.[/green]")
