@@ -93,7 +93,7 @@ from beltu.reporting.engine import ReportEngine
 from beltu.storage.repositories.report_repository import ReportRepository
 
 app = typer.Typer(no_args_is_help=True, help="BELTU — agentic security testing platform")
-target_app = typer.Typer(help="Manage explicitly authorized targets")
+target_app = typer.Typer(help="Manage registered assessment targets")
 scan_app = typer.Typer(help="Manage persistent scan lifecycles")
 app.add_typer(target_app, name="target-admin", hidden=True)
 app.add_typer(scan_app, name="scan")
@@ -273,8 +273,8 @@ def build_components():
 
 
 @app.command("target")
-def target(value: str = typer.Argument(..., help="Domain/host that is already authorized and present in scope")) -> None:
-    """Validate scope and register an explicitly authorized target."""
+def target(value: str = typer.Argument(..., help="Domain/host to register for this assessment")) -> None:
+    """Register an assessment target; v1.3 does not use a configured scope file.""""
     try:
         agent, _, _, _, _, _, _ = build_components()
         target_obj = agent.register_target(value)
@@ -320,7 +320,7 @@ def hunt(value: str = typer.Argument(..., help="Authorized target/domain to hunt
         console.print(f"[red]Hunt failed:[/red] {exc}")
         raise typer.Exit(code=1)
     console.print(f"BELTU hunt started/completed: target={value} scan=#{scan_id} task=#{task_id} status={scan_status}")
-    console.print("Reasoning is local-first; active tool execution still follows scope/approval/resource policy.")
+    console.print("Reasoning is local-first; active tool execution still follows approval/resource policy.")
 
 
 @target_app.command("list")
@@ -1107,7 +1107,6 @@ def status() -> None:
     else:
         console.print("FreeToken: not configured/running")
     console.print(f"Adaptive process capacity: {governor.effective_capacity(snap)}")
-    console.print(f"Scope file: {agent.scope.scope_file}")
     external_tools = bool(load_agent_config().get("execution", {}).get("external_tools_enabled", False))
     llm_config = LLMConfig.from_project(Path.cwd())
     console.print(f"External tool autonomy: {'enabled' if external_tools else 'disabled'}; approvals remain enforced")
