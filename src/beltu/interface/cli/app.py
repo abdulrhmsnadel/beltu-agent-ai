@@ -117,7 +117,7 @@ def load_agent_config() -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def build_components():
+def build_components(*, force_heuristic: bool = False):
     db_path, scope_path = paths()
     db = Database(db_path)
     db.initialize()
@@ -235,7 +235,7 @@ def build_components():
         prioritizer=HypothesisPrioritizer(),
         planner=Planner(),
         llm=llm_reasoner,
-        enabled=llm_config.enabled,
+        enabled=llm_config.enabled and not force_heuristic,
         fallback_to_heuristic=llm_config.fallback_to_heuristic,
     )
     brain_config = agent_config.get("brain", {}) if isinstance(agent_config.get("brain", {}), dict) else {}
@@ -299,14 +299,63 @@ def targets_list() -> None:
     console.print(table)
 
 
+def _run_hunt_preflight(value: str) -> bool:
+    """Validate local prerequisites and return whether heuristic mode is required."""
+    db_path, scope_path = paths()
+    console.print("[bold]BELTU hunt preflight[/bold]")
+    try:
+        ScopeGuard(scope_path).require_allowed(value)
+        console.print("[green]✓[/green] target is explicitly in scope")
+    except Exception as exc:
+        console.print(f"[red]✗[/red] scope: {exc}")
+        raise typer.Exit(code=2)
+
+    try:
+        Database(db_path).initialize()
+        console.print("[green]✓[/green] persistent database ready")
+    except Exception as exc:
+        console.print(f"[red]✗[/red] database: {exc}")
+        raise typer.Exit(code=2)
+
+    config = LLMConfig.from_project(Path.cwd())
+    force_heuristic = False
+    if not config.enabled:
+        console.print("[yellow]⚠[/yellow] local LLM reasoning is disabled; heuristic reasoning will be used")
+        force_heuristic = True
+    elif config.provider == "freetoken_local":
+        provider = FreeTokenLocalProvider(config)
+        reachable, model = provider.health_check(timeout_seconds=2.0)
+        if reachable:
+            console.print(f"[green]✓[/green] FreeToken online ({model or 'model auto-detected'})")
+        elif config.fallback_to_heuristic:
+            console.print("[yellow]⚠[/yellow] FreeToken is offline; continuing with fast heuristic fallback")
+            force_heuristic = True
+        else:
+            console.print(
+                "[red]✗[/red] FreeToken is offline and fallback_to_heuristic=false. "
+                "Start the local model with scripts/start_local_ai.sh."
+            )
+            raise typer.Exit(code=2)
+    else:
+        console.print(f"[green]✓[/green] LLM provider configured: {config.provider}")
+
+    return force_heuristic
+
+
 @app.command("hunt")
 def hunt(
     value: str = typer.Argument(..., help="Authorized target/domain to hunt"),
     watch: bool = typer.Option(False, "--watch", help="Keep the scheduler alive for feedback/replanning until Ctrl+C"),
+    check: bool = typer.Option(False, "--check", help="Run prerequisite checks only; do not create a scan"),
 ) -> None:
-    """Start the BELTU hunt lifecycle and execute policy-allowed work."""
+    """Start the BELTU hunt lifecycle; local endpoints use project defaults automatically."""
+    force_heuristic = _run_hunt_preflight(value)
+    if check:
+        console.print("[green]Hunt preflight passed.[/green]")
+        raise typer.Exit(code=0)
+
     async def run() -> tuple[int, int, str, list[int]]:
-        agent, scans, tasks, orchestrator, decisions, _, _ = build_components()
+        agent, scans, tasks, orchestrator, decisions, _, approvals = build_components(force_heuristic=force_heuristic)
         target_obj = agent.register_target(value)
         await orchestrator.start()
         try:
