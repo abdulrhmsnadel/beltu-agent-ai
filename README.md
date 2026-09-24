@@ -409,7 +409,7 @@ The feedback loop uses the new observations to update hypotheses and generate th
 
 # Multi-model brain — v1.3.0
 
-BELTU 1.2.0 adds a deterministic **Multi-Model LLM Router**.
+BELTU 1.3.0 adds a deterministic **Multi-Model LLM Router**.
 
 ```text
                     AgentContext
