@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -84,6 +85,25 @@ def test_router_selects_altar_for_code_review():
     assert decision.profile.name == "code_review"
 
 
+def test_router_uses_highest_priority_profile_on_overlapping_signals():
+    router = LLMRouter(enabled=True)
+    decision = router.classify(
+        AgentContext(
+            scan_id=1,
+            target="example.com",
+            observations=({"kind": "analysis", "subject": "code review plus PoC reproduction"},),
+            finding_surface={
+                "code_review": {"files": ["app.py"]},
+                "poc": {"present": True},
+            },
+        )
+    )
+    assert decision.route == "altar1"
+    assert decision.profile is not None
+    assert decision.profile.name == "exploit_proof"
+    assert decision.score == 1.2
+
+
 def test_altar_provider_creates_activity_lease(tmp_path: Path):
     server = ThreadingHTTPServer(("127.0.0.1", 0), AltarHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -116,7 +136,7 @@ def test_altar_provider_creates_activity_lease(tmp_path: Path):
 def test_governor_clamps_during_active_altar_request(tmp_path: Path):
     activity_dir = tmp_path / "altar1.active"
     activity_dir.mkdir()
-    (activity_dir / "request.json").write_text("{\"route\":\"exploit_proof\"}\n", encoding="utf-8")
+    (activity_dir / "request.json").write_text(json.dumps({"route":"exploit_proof","pid":os.getpid()}) + "\n", encoding="utf-8")
     governor = ResourceGovernor(
         max_concurrent_processes=4,
         min_concurrent_processes=1,
