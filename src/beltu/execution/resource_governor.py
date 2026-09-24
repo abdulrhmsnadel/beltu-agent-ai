@@ -300,6 +300,40 @@ class LinuxResourceMonitor:
                 continue
         return gpu, apps_by_pid
 
+    @staticmethod
+    def _descendant_pids(root_pid: int | None) -> set[int]:
+        if not root_pid or root_pid <= 1:
+            return set()
+        children: dict[int, list[int]] = {}
+        for entry in Path("/proc").glob("[0-9]*"):
+            try:
+                pid = int(entry.name)
+                status = (entry / "status").read_text(encoding="utf-8", errors="replace")
+                ppid = next(
+                    int(line.split()[1])
+                    for line in status.splitlines()
+                    if line.startswith("PPid:")
+                )
+            except (OSError, StopIteration, ValueError):
+                continue
+            children.setdefault(ppid, []).append(pid)
+        descendants: set[int] = set()
+        stack = [root_pid]
+        while stack:
+            parent = stack.pop()
+            for child in children.get(parent, []):
+                if child not in descendants:
+                    descendants.add(child)
+                    stack.append(child)
+        return descendants
+
+    @classmethod
+    def _gpu_usage_for_tree(cls, root_pid: int | None, apps: dict[int, int]) -> int:
+        if not root_pid:
+            return 0
+        pids = {root_pid} | cls._descendant_pids(root_pid)
+        return sum(apps.get(pid, 0) for pid in pids)
+
     def _gpu_snapshot(self) -> tuple[GpuSnapshot | None, dict[int, int]]:
         result = self._query_nvidia()
         if result is None:
@@ -315,8 +349,8 @@ class LinuxResourceMonitor:
                 gpu.used_bytes,
                 gpu.free_bytes,
                 gpu.utilization_percent,
-                apps.get(freetoken_pid, 0) if freetoken_pid else 0,
-                apps.get(altar1_pid, 0) if altar1_pid else 0,
+                self._gpu_usage_for_tree(freetoken_pid, apps),
+                self._gpu_usage_for_tree(altar1_pid, apps),
             ),
             apps,
         )
@@ -364,10 +398,24 @@ class LinuxResourceMonitor:
 
     def _altar1_snapshot(self, gpu: GpuSnapshot | None, apps: dict[int, int]) -> Altar1Snapshot | None:
         pid = self._read_altar1_pid()
-        active_files = []
+        active_files: list[Path] = []
         try:
             if self.altar1_activity_dir.exists():
-                active_files = [p for p in self.altar1_activity_dir.glob("*.json") if p.is_file()]
+                now = time.time()
+                for lease in self.altar1_activity_dir.glob("*.json"):
+                    if not lease.is_file():
+                        continue
+                    try:
+                        age = max(0.0, now - lease.stat().st_mtime)
+                        match = __import__("re").match(r"request-(\\d+)-", lease.name)
+                        lease_pid = int(match.group(1)) if match else 0
+                        alive = lease_pid > 1 and Path(f"/proc/{lease_pid}").exists()
+                        if alive and age <= 21600:
+                            active_files.append(lease)
+                        else:
+                            lease.unlink(missing_ok=True)
+                    except (OSError, ValueError):
+                        continue
         except OSError:
             active_files = []
         active = bool(active_files)
