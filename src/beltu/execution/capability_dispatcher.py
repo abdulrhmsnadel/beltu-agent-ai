@@ -4,7 +4,6 @@ from beltu.brain.observation_pipeline import ObservationPipeline
 from beltu.brain.observer import Observer
 from beltu.analysis.correlator import ObservationCorrelator
 from beltu.brain.schemas import ObservationInput
-from beltu.common.exceptions import ScopeViolation
 from beltu.execution.models import ExecutionRequest, ExecutionResult
 from beltu.execution.process_manager import ProcessManager
 from beltu.execution.registry.capability_registry import CapabilityRegistry
@@ -19,7 +18,7 @@ from beltu.storage.repositories.target_repository import TargetRepository
 
 
 class CapabilityDispatcher:
-    """Resolve a semantic capability, enforce scope/resources, then execute it."""
+    """Resolve a semantic capability, enforce policy/resources, then execute it."""
 
     def __init__(
         self,
@@ -47,14 +46,14 @@ class CapabilityDispatcher:
 
     async def execute(self, request: ExecutionRequest) -> ExecutionResult:
         normalized = request.target.strip()
-        if not self.scope.allowed(normalized):
-            raise ScopeViolation(f"Target is outside explicit scope: {normalized!r}")
+        if not normalized:
+            raise ValueError("Execution target cannot be empty")
         scan = self.scans.get(request.scan_id)
         if scan is None:
             raise ValueError(f"Scan #{request.scan_id} not found")
         target = self.targets.get(scan.target_id)
         if target is None or target.value.strip().lower() != normalized.lower():
-            raise ScopeViolation("Execution target does not match the scan's registered target")
+            raise ValueError("Execution target does not match the scan's registered target")
         adapter = self.registry.resolve(request.capability, request.options.get("tool"))
         if adapter.requires_approval and not request.approval_verified:
             raise PermissionError(
