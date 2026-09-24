@@ -17,6 +17,7 @@ ACTION_TO_CAPABILITY = {
     "access_control_analysis": "offline.authorization.matrix_analysis",
     "business_logic_analysis": "offline.business_logic.workflow_analysis",
     "finding_validation": "offline.finding.validation",
+    "web_vulnerability_detection": "web.vulnerability_detection",
     "browser_automation": "browser.automation",
     "http_workflow": "http.workflow",
     "session_replay": "session.replay",
