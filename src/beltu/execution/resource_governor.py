@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -407,7 +408,7 @@ class LinuxResourceMonitor:
                         continue
                     try:
                         age = max(0.0, now - lease.stat().st_mtime)
-                        match = __import__("re").match(r"request-(\\d+)-", lease.name)
+                        match = re.match(r"request-(\d+)-", lease.name)
                         lease_pid = int(match.group(1)) if match else 0
                         alive = lease_pid > 1 and Path(f"/proc/{lease_pid}").exists()
                         if alive and age <= 21600:
