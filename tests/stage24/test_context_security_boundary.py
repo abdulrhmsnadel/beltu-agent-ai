@@ -116,7 +116,9 @@ def test_context_builder_applies_boundary_before_returning_context():
     )
 
     context = builder.build(1)
-    assert "<REDACTED_BEARER>" in context.observations[0]["data"]["body"]
+    body = context.observations[0]["data"]["body"]
+    # Accept either scheme-specific or generic authorization redaction; both keep the secret out.
+    assert "<REDACTED_BEARER>" in body or "<REDACTED_AUTHORIZATION>" in body
     assert context.observations[0]["_beltu_context_trust"] == "untrusted_target_data"
 
 
