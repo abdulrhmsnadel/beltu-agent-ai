@@ -155,8 +155,12 @@ class LLMRouter:
     def classify(self, context: AgentContext) -> RouteDecision:
         text = self._context_text(context)
         reasons: list[str] = []
-        score = 0.0
-        profile: Altar1RequestProfile | None = None
+        scores: dict[str, float] = {}
+        profiles: dict[str, Altar1RequestProfile] = {
+            "code_review": Altar1RequestProfile("code_review", temperature=0.05, max_tokens=2600, top_p=0.90),
+            "exploit_proof": Altar1RequestProfile("exploit_proof", temperature=0.10, max_tokens=3200, top_p=0.92),
+            "authz_matrix": Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90),
+        }
 
         structured_code = self._contains_structured_signal(
             context.finding_surface,
@@ -172,17 +176,24 @@ class LLMRouter:
         )
 
         if structured_code or self._CODE_REVIEW.search(text):
-            score += 1.0
+            scores["code_review"] = 1.0
             reasons.append("code-review signal")
-            profile = Altar1RequestProfile("code_review", temperature=0.05, max_tokens=2600, top_p=0.90)
         if structured_proof or self._EXPLOIT_PROOF.search(text):
-            score += 1.2
+            scores["exploit_proof"] = 1.2
             reasons.append("exploit-proof/reproduction signal")
-            profile = Altar1RequestProfile("exploit_proof", temperature=0.10, max_tokens=3200, top_p=0.92)
         if structured_authz or self._AUTHZ_MATRIX.search(text):
-            score += 1.1
+            scores["authz_matrix"] = 1.1
             reasons.append("authorization-matrix anomaly signal")
-            profile = Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90)
+
+        # Pick the strongest matched specialist signal instead of allowing a later
+        # if-statement to overwrite an earlier profile on overlapping contexts.
+        profile: Altar1RequestProfile | None = None
+        if scores:
+            selected_name = max(scores, key=lambda name: (scores[name], name))
+            profile = profiles[selected_name]
+            score = scores[selected_name]
+        else:
+            score = 0.0
 
         context_size = len(json.dumps({
             "observations": context.observations,
@@ -202,13 +213,12 @@ class LLMRouter:
         else:
             gemini_mode = "monitor_agent"
 
-        route: RouteName = "altar1" if score >= 1.0 else "standard"
+        route: RouteName = "altar1" if profile is not None else "standard"
         if route == "altar1" and profile is None:
             profile = Altar1RequestProfile("altar1_specialized", temperature=0.08, max_tokens=2600, top_p=0.90)
         if not reasons:
             reasons.append("general agent monitoring")
         return RouteDecision(route, round(score, 3), tuple(reasons), profile, gemini_mode)
-
     @staticmethod
     def _parse_gemini_advice(raw: str) -> GeminiAdvice:
         cleaned = raw.strip()
