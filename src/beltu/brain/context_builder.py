@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from beltu.brain.attack_graph import AttackSurfaceGraph
 from beltu.brain.schemas import AgentContext
+from beltu.brain.context_security import ContextSecurityBoundary
 from beltu.storage.models.brain import Hypothesis, Observation
 from beltu.storage.repositories.hypothesis_repository import HypothesisRepository
 from beltu.storage.repositories.observation_repository import ObservationRepository
@@ -97,7 +98,7 @@ class ContextBuilder:
         finding_payload = {}
         if self.finding_intelligence is not None:
             finding_payload = self.finding_intelligence.context_payload(scan_id, limit=100)
-        return AgentContext(
+        return ContextSecurityBoundary().sanitize(AgentContext(
             scan_id=scan_id,
             target=target.value,
             observations=obs_payload,
@@ -113,4 +114,4 @@ class ContextBuilder:
             authorization_surface=dict(authorization_payload),
             business_logic_surface=dict(business_logic_payload),
             finding_surface=dict(finding_payload),
-        )
+        ))
