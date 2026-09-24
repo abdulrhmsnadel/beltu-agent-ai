@@ -106,6 +106,7 @@ class LinuxResourceMonitor:
         altar1_pid_file: str | Path = "data/runtime/altar1.pid",
         altar1_activity_dir: str | Path = "data/runtime/altar1.active",
         altar1_url: str = "http://127.0.0.1:8001",
+        altar1_activity_stale_after_seconds: float = 210.0,
     ) -> None:
         self.cpu_count = max(1, os.cpu_count() or 1)
         self.freetoken_pid_file = Path(freetoken_pid_file)
@@ -113,6 +114,7 @@ class LinuxResourceMonitor:
         self.altar1_pid_file = Path(altar1_pid_file)
         self.altar1_activity_dir = Path(altar1_activity_dir)
         self.altar1_url = altar1_url.rstrip("/")
+        self.altar1_activity_stale_after_seconds = max(1.0, float(altar1_activity_stale_after_seconds))
         self._prev_proc: tuple[int, float] | None = None
         self._prev_host: tuple[int, int] | None = None
 
@@ -238,6 +240,37 @@ class LinuxResourceMonitor:
     def _read_altar1_pid(self) -> int | None:
         return self._read_pid_file(self.altar1_pid_file)
 
+    @staticmethod
+    def _process_tree_pids(root_pid: int | None) -> set[int]:
+        if not root_pid or root_pid <= 1:
+            return set()
+        seen: set[int] = set()
+        pending = [root_pid]
+        while pending:
+            pid = pending.pop()
+            if pid in seen or pid <= 1:
+                continue
+            if not Path(f"/proc/{pid}").exists():
+                continue
+            seen.add(pid)
+            children_file = Path(f"/proc/{pid}/task/{pid}/children")
+            try:
+                children = children_file.read_text(encoding="utf-8").split()
+            except OSError:
+                children = []
+            for raw_child in children:
+                try:
+                    child = int(raw_child)
+                except ValueError:
+                    continue
+                if child not in seen:
+                    pending.append(child)
+        return seen
+
+    @classmethod
+    def _gpu_usage_for_tree(cls, root_pid: int | None, apps: dict[int, int]) -> int:
+        return sum(apps.get(pid, 0) for pid in cls._process_tree_pids(root_pid))
+
     def _query_nvidia(self) -> tuple[GpuSnapshot, dict[int, int]] | None:
         try:
             info = subprocess.run(
@@ -315,8 +348,8 @@ class LinuxResourceMonitor:
                 gpu.used_bytes,
                 gpu.free_bytes,
                 gpu.utilization_percent,
-                apps.get(freetoken_pid, 0) if freetoken_pid else 0,
-                apps.get(altar1_pid, 0) if altar1_pid else 0,
+                self._gpu_usage_for_tree(freetoken_pid, apps),
+                self._gpu_usage_for_tree(altar1_pid, apps),
             ),
             apps,
         )
@@ -364,10 +397,24 @@ class LinuxResourceMonitor:
 
     def _altar1_snapshot(self, gpu: GpuSnapshot | None, apps: dict[int, int]) -> Altar1Snapshot | None:
         pid = self._read_altar1_pid()
-        active_files = []
+        active_files: list[Path] = []
+        now = time.time()
         try:
             if self.altar1_activity_dir.exists():
-                active_files = [p for p in self.altar1_activity_dir.glob("*.json") if p.is_file()]
+                for path in self.altar1_activity_dir.glob("*.json"):
+                    if not path.is_file():
+                        continue
+                    try:
+                        age = max(0.0, now - path.stat().st_mtime)
+                        if age > self.altar1_activity_stale_after_seconds:
+                            continue
+                        metadata = json.loads(path.read_text(encoding="utf-8"))
+                        lease_pid = int(metadata.get("pid", 0)) if isinstance(metadata, dict) else 0
+                        if lease_pid <= 1 or not Path(f"/proc/{lease_pid}").exists():
+                            continue
+                    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                        continue
+                    active_files.append(path)
         except OSError:
             active_files = []
         active = bool(active_files)
@@ -422,6 +469,7 @@ class ResourceGovernor:
         altar1_activity_dir: str | Path = "data/runtime/altar1.active",
         altar1_url: str = "http://127.0.0.1:8001",
         gpu_vram_budget_percent: float = 45.0,
+        altar1_activity_stale_after_seconds: float = 210.0,
     ) -> None:
         self.max_concurrent_processes = max(1, int(max_concurrent_processes))
         self.min_concurrent_processes = max(1, min(int(min_concurrent_processes), self.max_concurrent_processes))
@@ -435,6 +483,7 @@ class ResourceGovernor:
             altar1_pid_file=altar1_pid_file,
             altar1_activity_dir=altar1_activity_dir,
             altar1_url=altar1_url,
+            altar1_activity_stale_after_seconds=altar1_activity_stale_after_seconds,
         )
         self._active = 0
         self._condition = asyncio.Condition()
