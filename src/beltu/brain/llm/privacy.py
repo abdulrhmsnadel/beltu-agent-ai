@@ -46,7 +46,7 @@ class CloudPrivacyFilter:
         r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
         re.I | re.S,
     )
-    _AUTH_HEADER = re.compile(r"(?i)(\bAuthorization\s*[:=]\s*)[^\r\n]+")
+    _AUTH_HEADER = re.compile(r"(?i)(\bAuthorization\s*[:=]\s*)(?!Bearer\s+)[^\r\n]+")
     _COOKIE_HEADER = re.compile(r"(?i)(\b(?:Cookie|Set-Cookie)\s*[:=]\s*)[^\r\n]+")
     _BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+")
     _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b")
@@ -62,9 +62,9 @@ class CloudPrivacyFilter:
     def scrub_text(self, value: str, *, limit: int | None = None) -> str:
         text = str(value)
         text = self._PRIVATE_KEY.sub("<REDACTED_PRIVATE_KEY>", text)
+        text = self._BEARER.sub(r"\1<REDACTED_BEARER>", text)
         text = self._AUTH_HEADER.sub(r"\1<REDACTED_AUTHORIZATION>", text)
         text = self._COOKIE_HEADER.sub(r"\1<REDACTED_COOKIE>", text)
-        text = self._BEARER.sub(r"\1<REDACTED_BEARER>", text)
         text = self._JWT.sub("<REDACTED_JWT>", text)
         text = self._SECRET_PAIR.sub(r"\1<REDACTED_SECRET>", text)
         maximum = self.policy.max_observation_chars if limit is None else max(256, int(limit))
