@@ -62,9 +62,9 @@ class ContextSecurityBoundary:
         text = unicodedata.normalize("NFKC", text)
         if self.policy.redact_secrets:
             text = self._PRIVATE_KEY.sub("<REDACTED_PRIVATE_KEY>", text)
+            text = self._BEARER.sub(r"\1<REDACTED_BEARER>", text)
             text = self._AUTH_HEADER.sub(r"\1<REDACTED_AUTHORIZATION>", text)
             text = self._COOKIE_HEADER.sub(r"\1<REDACTED_COOKIE>", text)
-            text = self._BEARER.sub(r"\1<REDACTED_BEARER>", text)
             text = self._JWT.sub("<REDACTED_JWT>", text)
             text = self._SECRET_PAIR.sub(r"\1<REDACTED_SECRET>", text)
         maximum = self.policy.max_string_chars if limit is None else max(128, int(limit))
