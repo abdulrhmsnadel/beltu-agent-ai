@@ -335,7 +335,8 @@ Use only an explicitly authorized target.
 beltu status
 beltu resources
 beltu llm
-beltu tools
+beltu tools --check
+beltu coverage
 ```
 
 These show the current scan state, resource pressure, local model state, and registered tools.
@@ -971,7 +972,7 @@ beltu doctor --strict
 
 ### Phase 2 — Scope
 
-Edit `config/scope.yaml` and add only the authorized target.
+Edit `config/scope.yaml` and add only the authorized target. BELTU is default-deny: a target is rejected until it is explicitly in this file.
 
 ### Phase 3 — Register
 
@@ -1179,6 +1180,6 @@ The model is never the sole authority for execution.
 
 # Version
 
-**BELTU 1.2.0**
+**BELTU 1.3.0**
 
 Standalone successor to the legacy `beltu-agent` repository.
