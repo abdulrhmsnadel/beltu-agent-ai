@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+import shutil
 import yaml
 
 import typer
@@ -274,7 +275,7 @@ def build_components():
 
 @app.command("target")
 def target(value: str = typer.Argument(..., help="Domain/host to register for this assessment")) -> None:
-    """Register an assessment target; v1.3 does not use a configured scope file.""""
+    """Register an assessment target inside the explicit configured scope."""
     try:
         agent, _, _, _, _, _, _ = build_components()
         target_obj = agent.register_target(value)
@@ -299,28 +300,47 @@ def targets_list() -> None:
 
 
 @app.command("hunt")
-def hunt(value: str = typer.Argument(..., help="Authorized target/domain to hunt")) -> None:
-    """Start the full persistent BELTU reasoning lifecycle for a target."""
-    async def run() -> tuple[int, int, str]:
-        agent, scans, tasks, orchestrator, _, _, _ = build_components()
+def hunt(
+    value: str = typer.Argument(..., help="Authorized target/domain to hunt"),
+    watch: bool = typer.Option(False, "--watch", help="Keep the scheduler alive for feedback/replanning until Ctrl+C"),
+) -> None:
+    """Start the BELTU hunt lifecycle and execute policy-allowed work."""
+    async def run() -> tuple[int, int, str, list[int]]:
+        agent, scans, tasks, orchestrator, decisions, _, _ = build_components()
         target_obj = agent.register_target(value)
         await orchestrator.start()
         try:
             scan, task = await agent.start_scan(target_obj.id)
+            if watch:
+                console.print(f"[cyan]Hunt running[/cyan] scan=#{scan.id}; press Ctrl+C to stop.")
+                while True:
+                    await asyncio.sleep(0.75)
             await orchestrator.scheduler.queue.join()
             final_scan = scans.get(scan.id)
             final_task = tasks.get(task.id)
-            return scan.id, task.id, final_scan.status if final_scan else (final_task.status if final_task else "unknown")
+            outstanding = [
+                item.id for item in decisions.list_for_scan(scan.id)
+                if item.status in {"approval_required", "pending_approval"}
+            ]
+            return scan.id, task.id, final_scan.status if final_scan else (final_task.status if final_task else "unknown"), outstanding
         finally:
             await orchestrator.stop()
 
     try:
-        scan_id, task_id, scan_status = asyncio.run(run())
+        scan_id, task_id, scan_status, outstanding = asyncio.run(run())
+    except KeyboardInterrupt:
+        console.print("[yellow]Hunt stopped by operator.[/yellow]")
+        raise typer.Exit(code=130)
     except Exception as exc:
         console.print(f"[red]Hunt failed:[/red] {exc}")
         raise typer.Exit(code=1)
-    console.print(f"BELTU hunt started/completed: target={value} scan=#{scan_id} task=#{task_id} status={scan_status}")
-    console.print("Reasoning is local-first; active tool execution still follows approval/resource policy.")
+    console.print(f"BELTU hunt session: target={value} scan=#{scan_id} task=#{task_id} status={scan_status}")
+    if outstanding:
+        console.print(f"[yellow]Approval-gated decisions waiting:[/yellow] {len(outstanding)}")
+        console.print("Run: beltu approval list")
+    else:
+        console.print("[green]No approval-gated decisions are waiting.[/green]")
+    console.print("Local Operator executes tools; Gemini is advisory and Altar-1 is local deep review.")
 
 
 @target_app.command("list")
@@ -1032,12 +1052,51 @@ def resources() -> None:
 
 
 @app.command("tools")
-def tools_list() -> None:
-    """List the allowlisted tool adapters and their risk/approval metadata."""
+def tools_list(
+    check: bool = typer.Option(False, "--check", help="Also check whether each underlying executable is installed"),
+) -> None:
+    """List registered execution tools and their live availability."""
     _, _, _, _, _, tools, _ = build_components()
-    table = Table("Tool", "Capability", "Risk", "Approval")
+    table = Table("Tool", "Binary", "Installed", "Capability", "Risk", "Approval")
     for tool in tools.list():
-        table.add_row(tool.name, tool.capability, tool.risk_level, "yes" if tool.requires_approval else "no")
+        resolved = shutil.which(tool.binary)
+        table.add_row(
+            tool.name,
+            tool.binary,
+            "YES" if resolved else "NO",
+            tool.capability,
+            tool.risk_level,
+            "yes" if tool.requires_approval else "no",
+        )
+    console.print(table)
+    if check:
+        missing = [tool for tool in tools.list() if shutil.which(tool.binary) is None]
+        if missing:
+            console.print("[yellow]Missing executables:[/yellow] " + ", ".join(t.name for t in missing))
+        else:
+            console.print("[green]All registered executables are available.[/green]")
+
+
+@app.command("coverage")
+def coverage() -> None:
+    """Show what BELTU actually tests and which parts are approval-gated."""
+    table = Table("Area", "BELTU capability", "Execution")
+    rows = [
+        ("Asset discovery", "Subfinder / Assetfinder / Amass passive", "Auto low-risk when installed"),
+        ("Web reachability", "HTTPX metadata/probing", "Approval-gated"),
+        ("Network services", "Nmap service discovery", "Approval-gated"),
+        ("Template vulnerability detection", "Nuclei candidate findings", "Approval-gated"),
+        ("Browser workflows", "Playwright navigation, forms, state, network metadata", "Approval-gated"),
+        ("HTTP/API workflows", "Bounded requests, replay, assertions", "Approval-gated"),
+        ("Session behavior", "Local-profile session replay and session intelligence", "Approval-gated"),
+        ("API parameter behavior", "Bounded query/header/JSON mutation", "Approval-gated"),
+        ("Authorization", "Principal/operation comparisons and authorization matrix analysis", "Approval-gated"),
+        ("Business logic", "State-machine/workflow analysis and bounded workflow checks", "Approval-gated"),
+        ("Race conditions", "Bounded concurrent request checks", "Approval-gated"),
+        ("XSS / SQL injection", "No dedicated custom scanner/payload engine; Nuclei may detect matching templates", "Not a dedicated BELTU engine"),
+    ]
+    for row in rows:
+        table.add_row(*row)
     console.print(table)
 
 
