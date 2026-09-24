@@ -17,6 +17,7 @@ PORT="${BELTU_FREETOKEN_PORT:-8000}"
 HOST="${BELTU_FREETOKEN_HOST:-127.0.0.1}"
 MEMORY_RATIO="${BELTU_FREETOKEN_MEMORY_RATIO:-0.45}"
 MAX_REQUESTS="${BELTU_FREETOKEN_MAX_RUNNING_REQUESTS:-1}"
+CUDA_DEVICES="${BELTU_FREETOKEN_CUDA_VISIBLE_DEVICES:-}"
 MOE_BACKEND="${BELTU_FREETOKEN_MOE_BACKEND:-auto}"
 PID_FILE="$ROOT/data/runtime/freetoken.pid"
 LOG_FILE="$ROOT/data/runtime/freetoken.log"
@@ -42,6 +43,10 @@ if [[ -f "$PID_FILE" ]]; then
     fi
   fi
   rm -f "$PID_FILE"
+fi
+
+if [[ -n "$CUDA_DEVICES" ]]; then
+  export CUDA_VISIBLE_DEVICES="$CUDA_DEVICES"
 fi
 
 CMD=("$FT_VENV/bin/ft" serve --model "$MODEL_PATH" --host "$HOST" --port "$PORT" --moe-strategy "$MOE_BACKEND" --memory-ratio "$MEMORY_RATIO" --max-running-requests "$MAX_REQUESTS" --moe-cache-auto)
