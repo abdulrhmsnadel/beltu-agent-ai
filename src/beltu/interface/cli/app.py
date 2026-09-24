@@ -135,6 +135,7 @@ def build_components(*, force_heuristic: bool = False):
     llm_runs = LLMRunRepository(db)
     selections = CapabilitySelectionRepository(db)
     events = EventBus()
+    llm_config = LLMConfig.from_project(Path.cwd())
 
     tools = ToolRegistry()
     for adapter in (
@@ -165,10 +166,10 @@ def build_components(*, force_heuristic: bool = False):
             min_concurrent_processes=1,
             poll_interval=0.5,
             freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
-            freetoken_url="http://127.0.0.1:8000",
+            freetoken_url=llm_config.base_url.rsplit("/v1", 1)[0].rstrip("/"),
             altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
             altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
-            altar1_url="http://127.0.0.1:8001",
+            altar1_url=llm_config.altar_base_url.rsplit("/v1", 1)[0].rstrip("/"),
             gpu_vram_budget_percent=45,
         ),
         observations,
@@ -219,7 +220,6 @@ def build_components(*, force_heuristic: bool = False):
     orchestrator = Orchestrator(targets, scans, tasks, scheduler, events)
     context_builder = ContextBuilder(scans, targets, observations, hypotheses, AttackSurfaceGraph(), asset_intelligence, surface_intelligence, api_intelligence, auth_intelligence, authorization_intelligence, business_logic_intelligence, finding_intelligence)
     agent_config = load_agent_config()
-    llm_config = LLMConfig.from_project(Path.cwd())
     standard_provider = FreeTokenLocalProvider(llm_config) if llm_config.enabled else DisabledLLMProvider()
     altar_provider = Altar1LocalProvider(llm_config) if llm_config.altar_enabled else DisabledLLMProvider()
     gemini_provider = GeminiCloudProvider(llm_config) if llm_config.gemini_enabled else DisabledLLMProvider()
@@ -1060,13 +1060,14 @@ def business_context(scan_id: int = typer.Argument(..., min=1)) -> None:
 @app.command("resources")
 def resources() -> None:
     """Show CPU/RAM/GPU/FreeToken telemetry and adaptive tool capacity."""
+    config = LLMConfig.from_project(Path.cwd())
     governor = ResourceGovernor(
         2, 30, 30, 1, 0.5,
         freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
-        freetoken_url="http://127.0.0.1:8000",
+        freetoken_url=config.base_url.rsplit("/v1", 1)[0].rstrip("/"),
         altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
         altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
-        altar1_url="http://127.0.0.1:8001",
+        altar1_url=config.altar_base_url.rsplit("/v1", 1)[0].rstrip("/"),
         gpu_vram_budget_percent=45,
     )
     snap = governor.snapshot()
