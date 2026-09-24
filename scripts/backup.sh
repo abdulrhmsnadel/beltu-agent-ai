@@ -14,7 +14,7 @@ trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/data"
 
 if [[ -f data/beltu.db ]]; then
-  sqlite3 data/beltu.db ".backup \'$STAGE/data/beltu.db\'"
+  sqlite3 data/beltu.db ".backup '$STAGE/data/beltu.db'"
 else
   echo "[BELTU] data/beltu.db not found; creating an empty placeholder." >&2
   : > "$STAGE/data/beltu.db"
