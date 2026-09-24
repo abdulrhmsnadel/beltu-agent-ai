@@ -13,6 +13,7 @@ ALLOWED_ACTIONS = frozenset({
     "access_control_analysis",
     "business_logic_analysis",
     "finding_validation",
+    "web_vulnerability_detection",
     "browser_automation",
     "http_workflow",
     "session_replay",
