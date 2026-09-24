@@ -11,7 +11,7 @@ from beltu.brain.hypothesis_engine import HeuristicHypothesisEngine
 from beltu.brain.planner import Planner
 from beltu.brain.prioritizer import HypothesisPrioritizer
 from beltu.brain.reasoning_engine import HybridReasoningEngine, ReasoningEngine, ReasoningProposalSet
-from beltu.brain.schemas import AgentContext
+from beltu.brain.schemas import AgentContext, HypothesisProposal
 from beltu.common.types import Event, Task
 from beltu.core.event_bus import EventBus
 from beltu.feedback.models import ReasoningCycle
@@ -178,6 +178,19 @@ class AutonomousReplanner:
                 proposals = self.prioritizer.rank(self.hypothesis_engine.generate(context))
                 plans = self.planner.plan(context, proposals)
                 reasoning_source = "heuristic"
+
+            # A valid local-LLM response can still contain zero actionable steps.
+            # The initial hunt must never silently end without a concrete capability.
+            if trigger == "initial_scan" and not context.observations and not plans:
+                proposals = [
+                    HypothesisProposal(
+                        "The attack surface is not characterized yet; an inventory pass is required.",
+                        (),
+                        0.99,
+                    )
+                ]
+                plans = self.planner.plan(context, proposals)
+                reasoning_source = f"{reasoning_source}+bootstrap"
 
             llm_run_id = None
             last_llm_run = getattr(self.reasoning_engine, "last_llm_run", None)
