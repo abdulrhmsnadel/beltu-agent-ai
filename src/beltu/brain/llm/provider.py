@@ -152,6 +152,27 @@ class FreeTokenLocalProvider:
     def _chat_url(self) -> str:
         return f"{self.config.base_url}/chat/completions"
 
+    def health_check(self, timeout_seconds: float = 2.0) -> tuple[bool, str | None]:
+        """Probe the local FreeToken server without invoking model generation."""
+        timeout = max(0.2, min(float(timeout_seconds), 5.0))
+        req = request.Request(
+            self._models_url(),
+            method="GET",
+            headers={"Accept": "application/json", "User-Agent": "BELTU/1.3-health"},
+        )
+        try:
+            with request.urlopen(req, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (OSError, ValueError, urlerror.URLError, urlerror.HTTPError):
+            return False, None
+        items = payload.get("data", []) if isinstance(payload, dict) else []
+        if not isinstance(items, list):
+            return False, None
+        for item in items:
+            if isinstance(item, dict) and item.get("id"):
+                return True, str(item["id"])
+        return False, None
+
     def _request(self, *, body: dict[str, Any], accept: str) -> Any:
         payload = json.dumps(body, separators=(",", ":")).encode("utf-8")
         req = request.Request(
