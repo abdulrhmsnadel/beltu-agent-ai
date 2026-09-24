@@ -256,6 +256,23 @@ def test_router_falls_back_to_standard_on_gemini_rate_limit():
     assert result.trace["gemini_status"] == "fallback_to_standard_rate_limit"
 
 
+def test_shell_scripts_parse_with_bash():
+    scripts = [
+        "scripts/install.sh",
+        "scripts/install_local_ai.sh",
+        "scripts/start_local_ai.sh",
+        "scripts/start_altar1.sh",
+        "scripts/stop_local_ai.sh",
+        "scripts/stop_altar1.sh",
+        "scripts/backup.sh",
+        "scripts/release.sh",
+    ]
+    import subprocess
+    for script in scripts:
+        result = subprocess.run(["bash", "-n", script], capture_output=True, text=True)
+        assert result.returncode == 0, f"{script}: {result.stderr}"
+
+
 def test_start_scripts_require_loopback_and_local_models():
     # Documentation-level regression guard: launcher defaults remain local-only.
     altar = Path("scripts/start_altar1.sh").read_text(encoding="utf-8")
