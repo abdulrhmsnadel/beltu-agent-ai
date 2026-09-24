@@ -159,18 +159,34 @@ class LLMRouter:
             for container in (context.authorization_surface, context.finding_surface)
         )
 
+        signals: list[tuple[float, str, Altar1RequestProfile]] = []
         if structured_code or self._CODE_REVIEW.search(text):
-            score += 1.0
-            reasons.append("code-review signal")
-            profile = Altar1RequestProfile("code_review", temperature=0.05, max_tokens=2600, top_p=0.90)
+            signals.append((
+                1.0,
+                "code-review signal",
+                Altar1RequestProfile("code_review", temperature=0.05, max_tokens=2600, top_p=0.90),
+            ))
         if structured_proof or self._EXPLOIT_PROOF.search(text):
-            score += 1.2
-            reasons.append("exploit-proof/reproduction signal")
-            profile = Altar1RequestProfile("exploit_proof", temperature=0.10, max_tokens=3200, top_p=0.92)
+            signals.append((
+                1.2,
+                "exploit-proof/reproduction signal",
+                Altar1RequestProfile("exploit_proof", temperature=0.10, max_tokens=3200, top_p=0.92),
+            ))
         if structured_authz or self._AUTHZ_MATRIX.search(text):
-            score += 1.1
-            reasons.append("authorization-matrix anomaly signal")
-            profile = Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90)
+            signals.append((
+                1.1,
+                "authorization-matrix anomaly signal",
+                Altar1RequestProfile("authz_matrix", temperature=0.05, max_tokens=2400, top_p=0.90),
+            ))
+
+        # Multiple specialist signals can legitimately overlap. Pick one
+        # deterministic primary profile instead of letting the last matching
+        # block silently overwrite the previous profile.
+        if signals:
+            best_score, best_reason, best_profile = max(signals, key=lambda item: (item[0], item[1]))
+            score = best_score
+            reasons.append(best_reason)
+            profile = best_profile
 
         context_size = len(json.dumps({
             "observations": context.observations,
