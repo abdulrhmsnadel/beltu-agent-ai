@@ -151,3 +151,21 @@ def test_resource_snapshot_altar_field_is_optional():
     )
     assert snap.altar1 is not None
     assert not snap.altar1.active
+
+def test_router_prefers_deterministic_highest_priority_on_overlap():
+    router = LLMRouter(enabled=True)
+    context = AgentContext(
+        scan_id=1,
+        target="example.test",
+        finding_surface={
+            "code_review": True,
+            "exploit_proof": True,
+            "poc": "reproduction",
+            "summary": "review source and validate the exploit proof",
+        },
+    )
+    decision = router.classify(context)
+    assert decision.route == "altar1"
+    assert decision.profile is not None
+    assert decision.profile.name == "exploit_proof"
+    assert decision.score == 1.2
