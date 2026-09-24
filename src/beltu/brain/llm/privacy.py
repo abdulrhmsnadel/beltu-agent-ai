@@ -34,7 +34,7 @@ class CloudPrivacyFilter:
 
     _SENSITIVE_KEY = re.compile(
         r"(?i)^(?:authorization|cookie|set-cookie|password|passwd|passphrase|secret|"
-        r"api[_-]?key|apikey|client[_-]?secret|access[_-]?token|refresh[_-]?token|"
+        r"(?:x[-_])?(?:api[_-]?key)|apikey|client[_-]?secret|access[_-]?token|refresh[_-]?token|"
         r"id[_-]?token|session[_-]?(?:id|token)|csrf[_-]?(?:token|secret)|credentials?|"
         r"private[_-]?key|ssh[_-]?key|auth[_-]?header)$"
     )
