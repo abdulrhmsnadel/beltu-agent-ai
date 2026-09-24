@@ -25,8 +25,8 @@
     "business_logic_workflows",
     "race_condition_testing"
   ],
-  "tests": "141 passed",
-  "doctor": "9/9 passed",
+  "tests": "142 passed",
+  "doctor": "11/11 passed",
   "gemini": {
     "model": "gemini-3.8-flash",
     "api_key_env": "GEMINI_API_KEY",
