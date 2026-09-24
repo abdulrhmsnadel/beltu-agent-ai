@@ -24,6 +24,16 @@ class HeuristicHypothesisEngine:
             ]
 
         endpoint_ids = tuple(item["id"] for item in obs if item["kind"] in {"endpoint", "api_endpoint"})
+        http_probe_ids = tuple(item["id"] for item in obs if item["kind"] == "web.http_probe")
+        if http_probe_ids:
+            proposals.append(
+                HypothesisProposal(
+                    "A verified web surface is available and a bounded template-detection pass can identify candidate vulnerabilities.",
+                    http_probe_ids,
+                    0.79,
+                )
+            )
+
         if endpoint_ids:
             proposals.append(
                 HypothesisProposal(
