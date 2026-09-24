@@ -568,7 +568,7 @@ class GeminiCloudProvider:
                 f"next slot in {delay:.1f}s"
             )
         body: dict[str, Any] = {
-            "systemInstruction": {"parts": [{"text": system_safe}]},
+            "system_instruction": {"parts": [{"text": system_safe}]},
             "contents": [{"role": "user", "parts": [{"text": user_safe}]}],
             "generationConfig": {
                 "maxOutputTokens": self.config.gemini_max_output_tokens,
