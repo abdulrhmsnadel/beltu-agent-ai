@@ -60,6 +60,13 @@ class Planner:
                     "Use the bounded browser worker to exercise UI state and capture in-scope network metadata.",
                     hypothesis.confidence, "medium", True,
                 ))
+            elif "vulnerability" in text or "nuclei" in text or "template detection" in text:
+                actions.append(ActionProposal(
+                    "web_vulnerability_detection",
+                    {"target": context.target, "hypothesis": hypothesis.statement},
+                    "Run a bounded Nuclei candidate-detection pass against the verified web surface.",
+                    hypothesis.confidence, "high", True,
+                ))
             elif "request" in text or "http" in text or "burp" in text:
                 actions.append(ActionProposal(
                     "http_workflow",
