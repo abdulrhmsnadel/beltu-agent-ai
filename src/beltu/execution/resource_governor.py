@@ -410,8 +410,14 @@ class LinuxResourceMonitor:
                         age = max(0.0, now - lease.stat().st_mtime)
                         match = re.match(r"request-(\d+)-", lease.name)
                         lease_pid = int(match.group(1)) if match else 0
-                        alive = lease_pid > 1 and Path(f"/proc/{lease_pid}").exists()
-                        if alive and age <= 21600:
+                        if lease_pid > 1:
+                            active = Path(f"/proc/{lease_pid}").exists()
+                        else:
+                            # Older/custom lease files may not encode a PID.
+                            # Keep a fresh lease active, but expire it after
+                            # the same bounded maximum age.
+                            active = True
+                        if active and age <= 21600:
                             active_files.append(lease)
                         else:
                             lease.unlink(missing_ok=True)
