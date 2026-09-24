@@ -26,7 +26,7 @@ if [[ "$VERSION" != "$PYPROJECT_VERSION" || "$VERSION" != "$MANIFEST_VERSION" ||
   echo "Version mismatch: version.py=$VERSION pyproject=$PYPROJECT_VERSION manifest=$MANIFEST_VERSION README=$README_VERSION" >&2
   exit 3
 fi
-if ! git diff --quiet || ! git diff --cached --quiet; then
+if [[ -n "$(git status --porcelain)" ]]; then
   echo "Working tree must be clean before creating a release archive." >&2
   exit 4
 fi
