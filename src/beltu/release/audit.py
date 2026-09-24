@@ -33,6 +33,7 @@ class ReleaseAudit:
         agent = self._config("config/agent.yaml")
         remote = self._config("config/remote.yaml")
         notifications = self._config("config/notifications.yaml")
+        scope = self._config("config/scope.yaml")
 
         external = bool((agent.get("execution") or {}).get("external_tools_enabled", False))
         brain = agent.get("brain") or {}
@@ -46,11 +47,12 @@ class ReleaseAudit:
         wa = bool((notifications.get("whatsapp") or {}).get("enabled", False))
         host = (remote.get("remote") or {}).get("host", "127.0.0.1")
         cors = (remote.get("remote") or {}).get("cors_origins", [])
+        targets = scope.get("targets", [])
         high_risk_approval = bool((agent.get("policy") or {}).get("high_risk_requires_approval", False))
         checks.append(AuditCheck(
             "external_tools_policy_safe",
-            (not external) or high_risk_approval,
-            f"external_tools_enabled={external}; high_risk_requires_approval={high_risk_approval}",
+            (not external) or (isinstance(targets, list) and high_risk_approval),
+            f"external_tools_enabled={external}; explicit_scope_entries={len(targets) if isinstance(targets, list) else 'invalid'}; high_risk_requires_approval={high_risk_approval}",
         ))
         loopback_host = (urlparse(llm_url).hostname or "").lower()
         local_llm_safe = (not llm) or (llm_provider == "freetoken_local" and llm_local_only and loopback_host in {"127.0.0.1", "localhost", "::1"} and not llm_key_required)
@@ -87,6 +89,11 @@ class ReleaseAudit:
         checks.append(AuditCheck("whatsapp_default_off", not wa, f"whatsapp.enabled={wa}"))
         checks.append(AuditCheck("remote_defaults_to_loopback", host in {"127.0.0.1", "localhost", "::1"}, f"remote.host={host!r}"))
         checks.append(AuditCheck("cors_not_wildcard", "*" not in cors, f"cors_origins={cors!r}"))
+        checks.append(AuditCheck(
+            "scope_default_deny",
+            isinstance(targets, list),
+            f"scope targets count={len(targets) if isinstance(targets, list) else 'invalid'}",
+        ))
 
         unsafe=[]
         for path in self._python_files():
