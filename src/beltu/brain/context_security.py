@@ -42,7 +42,7 @@ class ContextSecurityBoundary:
         r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
         re.I | re.S,
     )
-    _AUTH_HEADER = re.compile(r"(?i)(\bAuthorization\s*[:=]\s*)[^\r\n]+")
+    _AUTH_HEADER = re.compile(r"(?i)(\bAuthorization\s*[:=]\s*)(?!Bearer\s+)[^\r\n]+")
     _COOKIE_HEADER = re.compile(r"(?i)(\b(?:Cookie|Set-Cookie)\s*[:=]\s*)[^\r\n]+")
     _BEARER = re.compile(r"(?i)(\bBearer\s+)[A-Za-z0-9._~+/=-]+")
     _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b")
