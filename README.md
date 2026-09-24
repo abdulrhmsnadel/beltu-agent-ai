@@ -474,15 +474,16 @@ The project configuration expects:
 http://127.0.0.1:8000/v1
 ```
 
-Install the local FreeToken environment with:
+Install the local FreeToken environment from a pinned commit:
 
 ```bash
+export BELTU_FREETOKEN_COMMIT=<40-character-free-token-commit-sha>
 scripts/install_local_ai.sh
 ```
 
-That script prepares the FreeToken checkout/virtual environment but does **not** download a model for you.
+The installer checks out that exact commit, prepares the virtual environment, and does **not** download a model for you.
 
-Point BELTU to a local model directory:
+Point BELTU to an already-downloaded local model directory or checkpoint file:
 
 ```bash
 export BELTU_FREETOKEN_MODEL=/absolute/path/to/local/model
@@ -549,11 +550,16 @@ Stop it with:
 scripts/stop_altar1.sh
 ```
 
-The included launcher is a local orchestration helper; you still need the Altar-1 serving stack and model weights on the machine. The public model card documents:
+The included launcher is a local orchestration helper; you still need the Altar-1 serving stack and model weights on the machine. BELTU refuses remote model IDs and non-loopback hosts. Configure an already-downloaded local snapshot plus its pinned model revision:
 
 ```bash
-vllm serve aikido/altar-1 --tensor-parallel-size 4 --trust-remote-code --max-model-len 131072
+export BELTU_ALTAR1_MODEL_PATH=/absolute/path/to/a-local-altar-1-snapshot
+export BELTU_ALTAR1_MODEL_REVISION=<40-character-model-commit-sha>
+export BELTU_ALTAR1_HOST=127.0.0.1
+scripts/start_altar1.sh
 ```
+
+The launcher sets Hugging Face/Transformers offline mode, uses a process group for clean shutdown, applies an explicit GPU-memory utilization cap, and waits for /v1/models readiness.
 
 citeturn710406search0
 
