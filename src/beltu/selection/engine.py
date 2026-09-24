@@ -231,7 +231,7 @@ class IntelligentCapabilitySelector:
             return None, 0.0, "internal capability"
         candidates = []
         try:
-            candidates = self.registry.tools.for_capability(profile.name)
+            candidates = self.registry.tools.for_capability(profile.name, installed_only=True)
         except Exception:
             candidates = []
         if not candidates:
