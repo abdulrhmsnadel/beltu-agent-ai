@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import signal
 import time
 from dataclasses import dataclass
 
@@ -44,6 +45,33 @@ class ProcessManager:
                 env[key] = value
         return env
 
+    @staticmethod
+    async def _terminate_process_group(proc: asyncio.subprocess.Process, *, grace_seconds: float = 3.0) -> None:
+        if proc.returncode is not None:
+            return
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            try:
+                proc.terminate()
+            except ProcessLookupError:
+                return
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=max(0.25, grace_seconds))
+            return
+        except asyncio.TimeoutError:
+            pass
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                return
+        await asyncio.gather(proc.wait(), return_exceptions=True)
+
     async def run(
         self,
         argv: list[str],
@@ -64,6 +92,7 @@ class ProcessManager:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             env=self._safe_environment(),
+            start_new_session=True,
         )
         if resource_governor is not None and tool_name:
             resource_governor.register_process(proc.pid, tool_name)
@@ -72,8 +101,13 @@ class ProcessManager:
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
         except asyncio.TimeoutError:
             timed_out = True
-            proc.kill()
+            await self._terminate_process_group(proc)
             stdout_b, stderr_b = await proc.communicate()
+        except asyncio.CancelledError:
+            await self._terminate_process_group(proc)
+            if resource_governor is not None:
+                resource_governor.unregister_process(proc.pid)
+            raise
         duration = time.monotonic() - started
         if resource_governor is not None:
             resource_governor.unregister_process(proc.pid)
