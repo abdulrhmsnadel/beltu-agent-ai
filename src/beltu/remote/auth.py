@@ -21,9 +21,7 @@ def _unb64(text: str) -> bytes:
 def _hash_password(value: str, *, salt: bytes | None = None, iterations: int = 600_000) -> str:
     salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", value.encode("utf-8"), salt, iterations)
-    return f"pbkdf2_sha256$%%ITER%%$%%SALT%%$%%DIGEST%%".replace(
-        "%%ITER%%", str(iterations)
-    ).replace("%%SALT%%", _b64(salt)).replace("%%DIGEST%%", _b64(digest))
+    return "pbkdf2_sha256$" + str(iterations) + "$" + _b64(salt) + "$" + _b64(digest)
 
 
 def _verify_password(value: str, encoded: str) -> bool:
