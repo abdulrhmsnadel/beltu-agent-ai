@@ -1,6 +1,6 @@
-# BELTU 1.2.0 Release
+# BELTU 1.3.0 Release
 
-BELTU 1.2.0 adds a multi-model local reasoning brain with deterministic routing between the standard local provider and the optional Altar-1 security specialist.
+BELTU 1.3.0 adds the Gemini advisory co-pilot, privacy boundary, deterministic three-tier routing, and hardened local model runtime.
 
 ## Included
 
@@ -12,9 +12,12 @@ BELTU 1.2.0 adds a multi-model local reasoning brain with deterministic routing 
 - VRAM/resource governor mitigation while Altar-1 is active
 - Altar-1 start/stop helper scripts
 - Stage 22 multi-model tests
-- Package version 1.2.0
-- Updated mobile client metadata
+- Stage 24 Gemini privacy/routing tests
+- Package version 1.3.0
+- Updated mobile client metadata (1.3.0+23)
 
 ## Deployment note
+
+Gemini is advisory-only and the local BELTU operator remains final authority. The local reasoning path does not require a cloud API key.
 
 The public Altar-1 model card describes a 328 GB INT4/W4A16 build intended for 4× NVIDIA H200 serving. BELTU keeps the specialist disabled by default and does not automatically download model weights.
