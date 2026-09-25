@@ -131,11 +131,26 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
     @app.get("/v1/system/resources")
     async def system_resources(_: RemotePrincipal = Depends(require_scope("read"))):
         from beltu.execution.resource_governor import ResourceGovernor
+        resource_cfg_path = root / "config" / "resources.yaml"
+        resource_cfg = {}
+        if resource_cfg_path.exists():
+            import yaml
+            resource_cfg = yaml.safe_load(resource_cfg_path.read_text(encoding="utf-8")) or {}
+        policy = resource_cfg.get("resource_policy", {}) if isinstance(resource_cfg, dict) else {}
+        altar_url = str((policy.get("altar1", {}) or {}).get("url", "http://127.0.0.1:8101")).rstrip("/")
+        freetoken_url = str((policy.get("freetoken", {}) or {}).get("url", "http://127.0.0.1:8000")).rstrip("/")
         governor = ResourceGovernor(
-            2, 30, 30, 1, 0.5,
+            int(policy.get("max_concurrent_processes", 2)),
+            float(policy.get("cpu_budget_percent", 30)),
+            float(policy.get("memory_budget_percent", 30)),
+            int(policy.get("min_concurrent_processes", 1)),
+            float(policy.get("poll_interval_seconds", 0.5)),
             freetoken_pid_file=root / "data" / "runtime" / "freetoken.pid",
-            freetoken_url=os.getenv("BELTU_FREETOKEN_URL", "http://127.0.0.1:8000"),
-            gpu_vram_budget_percent=45,
+            freetoken_url=freetoken_url,
+            altar1_pid_file=root / "data" / "runtime" / "altar1.pid",
+            altar1_activity_dir=root / "data" / "runtime" / "altar1.active",
+            altar1_url=altar_url,
+            gpu_vram_budget_percent=float(policy.get("gpu_vram_budget_percent", 45)),
         )
         snap = governor.snapshot()
         payload = {
