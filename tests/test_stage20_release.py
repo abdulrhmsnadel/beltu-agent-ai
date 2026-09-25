@@ -56,3 +56,10 @@ def test_remote_api_version_matches_package(tmp_path: Path):
     _, _ = seed(tmp_path)
     app = create_app(tmp_path, auth=RemoteAuth(username="u", password="p", secret="s" * 40))
     assert app.version == __version__
+
+
+def test_remote_auth_uses_pbkdf2_password_hash():
+    auth = RemoteAuth(username="u", password="p", secret="s" * 40)
+    assert auth.password_hash.startswith("pbkdf2_sha256$")
+    assert len(auth.password_hash.split("$")) == 4
+    assert auth.verify(auth.login("u", "p")).subject == "u"
