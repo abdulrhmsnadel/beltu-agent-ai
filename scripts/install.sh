@@ -13,7 +13,8 @@ fi
 
 "$PYTHON_BIN" -m pip install -e .
 "$PYTHON_BIN" -m compileall -q src
-.venv/bin/beltu doctor --strict
+"$PYTHON_BIN" -m pip check
+"$PYTHON_BIN" -c 'from beltu.release.audit import run_audit; checks=run_audit(); raise SystemExit(2 if any(not c.ok for c in checks) else 0)'
 
 if [[ "${BELTU_INSTALL_LOCAL_AI:-0}" == "1" ]]; then
   scripts/install_local_ai.sh
