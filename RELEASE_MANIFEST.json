@@ -25,7 +25,7 @@
     "business_logic_workflows",
     "race_condition_testing"
   ],
-  "tests": "143 test functions; CI runs pytest -q",
+  "tests": "144 test functions; CI runs pytest -q",
   "doctor": "static release audit",
   "gemini": {
     "model": "gemini-3.8-flash",
