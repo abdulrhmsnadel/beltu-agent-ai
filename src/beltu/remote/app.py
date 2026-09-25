@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
@@ -17,7 +19,7 @@ from beltu.remote.auth import RemoteAuth, RemotePrincipal
 from beltu.remote.delivery import SmtpReportDelivery
 from beltu.remote.events import EventHub
 from beltu.remote.repository import RemoteRepository
-from beltu.remote.schemas import ChatMessageRequest, ChatMessageResponse, LoginRequest, LoginResponse
+from beltu.remote.schemas import ApprovalResolutionRequest, ChatMessageRequest, ChatMessageResponse, LoginRequest, LoginResponse
 from beltu.remote.workspace import WorkspaceService
 from beltu.remote.chat_bridge import ChatAgentBridge
 from beltu.storage.database import Database
@@ -46,6 +48,7 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
     event_hub = EventHub(event_bus)
     authenticator = auth if auth is not None else None
     smtp = SmtpReportDelivery(root)
+    login_attempts: dict[str, list[float]] = {}
     if event_bus is not None:
         ChatAgentBridge(event_bus, remote_repo, db).install()
 
@@ -96,13 +99,21 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
         return {"status": "ok", "service": "beltu-remote", "version": __import__("beltu.version", fromlist=["__version__"]).__version__, "auth_configured": authenticator is not None}
 
     @app.post("/v1/auth/login", response_model=LoginResponse)
-    async def login(payload: LoginRequest):
+    async def login(payload: LoginRequest, request: Request):
         if authenticator is None:
             raise HTTPException(status_code=503, detail="Remote authentication is not configured")
+        client_host = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        attempts = [stamp for stamp in login_attempts.get(client_host, []) if now - stamp < 60.0]
+        if len(attempts) >= 10:
+            raise HTTPException(status_code=429, detail="Too many login attempts; retry later")
+        attempts.append(now)
+        login_attempts[client_host] = attempts
         try:
             token = authenticator.login(payload.username, payload.password)
         except PermissionError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        login_attempts.pop(client_host, None)
         return LoginResponse(access_token=token, expires_in=authenticator.ttl_seconds, scopes=["read", "chat", "control", "approve"])
 
     @app.get("/v1/targets")
@@ -205,10 +216,10 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
         return {"items": [{"id": a.id, "decision_id": a.decision_id, "scan_id": a.scan_id, "action_kind": a.action_kind, "status": a.status, "channel": a.channel, "recipient": a.recipient, "reason": a.reason, "requested_at": a.requested_at, "expires_at": a.expires_at} for a in rows]}
 
     @app.post("/v1/approvals/{approval_id}/approve")
-    async def approve(approval_id: int, token: str = Query(..., min_length=8, max_length=256), principal: RemotePrincipal = Depends(require_scope("approve"))):
+    async def approve(approval_id: int, payload: ApprovalResolutionRequest, principal: RemotePrincipal = Depends(require_scope("approve"))):
         service = ApprovalService(DecisionRepository(db), ApprovalRepository(db))
         try:
-            approval = service.approve(approval_id, resolved_by=f"mobile:{principal.subject}", token=token)
+            approval = service.approve(approval_id, resolved_by=f"mobile:{principal.subject}", token=payload.token)
         except (KeyError, PermissionError, ValueError) as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         queued_task_id = None
@@ -341,18 +352,19 @@ def create_app(project_root: str | Path = ".", *, event_bus: EventBus | None = N
     @app.websocket("/v1/ws/events")
     async def events(websocket: WebSocket):
         await websocket.accept()
-        token = websocket.query_params.get("token", "")
         if authenticator is None:
             await websocket.close(code=1013, reason="Remote authentication is not configured")
             return
         try:
+            first = await asyncio.wait_for(websocket.receive_json(), timeout=5.0)
+            token = str(first.get("token", "")) if isinstance(first, dict) else ""
             principal = authenticator.verify(token)
             if "read" not in principal.scopes:
                 raise PermissionError("Missing scope: read")
-        except PermissionError:
+        except (PermissionError, asyncio.TimeoutError, ValueError, TypeError):
             await websocket.close(code=1008, reason="Unauthorized")
             return
-        queue = await event_hub.subscribe()
+        queue = await event_hub.subscribe();
         try:
             await websocket.send_json({"type": "remote.connected", "payload": {"subject": principal.subject}})
             while True:
