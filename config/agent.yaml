@@ -47,7 +47,7 @@ brain:
 
     altar1:
       enabled: false
-      base_url: http://127.0.0.1:8001/v1
+      base_url: http://127.0.0.1:8101/v1
       model: aikido/altar-1
       api_key_env: BELTU_ALTAR1_API_KEY
       api_key_required: false
