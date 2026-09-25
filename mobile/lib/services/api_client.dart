@@ -78,8 +78,12 @@ class BeltuApiClient {
   }
 
   Future<void> approve(int approvalId, String token) async {
-    final uri = Uri.parse('$baseUrl/v1/approvals/$approvalId/approve').replace(queryParameters: {'token': token});
-    final r = await http.post(uri, headers: await _headers());
+    final uri = Uri.parse('$baseUrl/v1/approvals/$approvalId/approve');
+    final r = await http.post(
+      uri,
+      headers: await _headers(),
+      body: jsonEncode({'token': token}),
+    );
     _ensureOk(r);
   }
 
@@ -120,7 +124,8 @@ class BeltuApiClient {
     if (token == null || token.isEmpty) throw Exception('Not authenticated');
     final scheme = baseUrl.startsWith('https://') ? 'wss://' : 'ws://';
     final authority = baseUrl.replaceFirst(RegExp(r'^https?://'), '');
-    final channel = WebSocketChannel.connect(Uri.parse('$scheme$authority/v1/ws/events?token=${Uri.encodeComponent(token)}'));
+    final channel = WebSocketChannel.connect(Uri.parse('$scheme$authority/v1/ws/events'));
+    channel.sink.add(jsonEncode({'token': token}));
     try {
       await for (final message in channel.stream) {
         if (message is String) yield jsonDecode(message) as Map<String, dynamic>;
