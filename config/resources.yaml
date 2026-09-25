@@ -8,3 +8,7 @@ resource_policy:
   freetoken:
     url: http://127.0.0.1:8000
     pid_file: data/runtime/freetoken.pid
+  altar1:
+    url: http://127.0.0.1:8101
+    pid_file: data/runtime/altar1.pid
+    activity_dir: data/runtime/altar1.active
