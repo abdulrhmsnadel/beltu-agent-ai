@@ -106,7 +106,7 @@ class LinuxResourceMonitor:
         freetoken_url: str = "http://127.0.0.1:8000",
         altar1_pid_file: str | Path = "data/runtime/altar1.pid",
         altar1_activity_dir: str | Path = "data/runtime/altar1.active",
-        altar1_url: str = "http://127.0.0.1:8001",
+        altar1_url: str = "http://127.0.0.1:8101",
     ) -> None:
         self.cpu_count = max(1, os.cpu_count() or 1)
         self.freetoken_pid_file = Path(freetoken_pid_file)
