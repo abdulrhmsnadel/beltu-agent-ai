@@ -48,11 +48,13 @@ fi
 CMD=(
   "$VLLM_BIN" serve "$MODEL"
   --tensor-parallel-size "$TENSOR_PARALLEL"
-  --trust-remote-code
   --max-model-len "$MAX_MODEL_LEN"
   --host "$HOST"
   --port "$PORT"
 )
+if [[ "${BELTU_ALTAR1_TRUST_REMOTE_CODE:-0}" == "1" ]]; then
+  CMD+=(--trust-remote-code)
+fi
 
 umask 077
 export HF_HUB_OFFLINE=1
