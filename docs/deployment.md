@@ -3,9 +3,10 @@
 ## Local
 
 ```bash
-python3 -m pip install -e . --no-build-isolation
+scripts/install.sh
+source .venv/bin/activate
 beltu doctor --strict
-beltu remote serve
+beltu remote
 ```
 
 ## Remote/mobile
