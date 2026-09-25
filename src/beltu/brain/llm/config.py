@@ -61,7 +61,7 @@ class LLMConfig:
     gemini_allow_session_data: bool = False
     gemini_allow_credentials: bool = False
     altar_enabled: bool = False
-    altar_base_url: str = "http://127.0.0.1:8001/v1"
+    altar_base_url: str = "http://127.0.0.1:8101/v1"
     altar_model: str = "aikido/altar-1"
     altar_api_key_env: str = "BELTU_ALTAR1_API_KEY"
     altar_api_key_required: bool = False
@@ -118,7 +118,7 @@ class LLMConfig:
             gemini_allow_session_data=bool((data.get("gemini", {}) if isinstance(data.get("gemini", {}), dict) else {}).get("allow_session_data", False)),
             gemini_allow_credentials=bool((data.get("gemini", {}) if isinstance(data.get("gemini", {}), dict) else {}).get("allow_credentials", False)),
             altar_enabled=bool(altar.get("enabled", False)),
-            altar_base_url=str(altar.get("base_url", "http://127.0.0.1:8001/v1")).rstrip("/"),
+            altar_base_url=str(altar.get("base_url", "http://127.0.0.1:8101/v1")).rstrip("/"),
             altar_model=str(altar.get("model", "aikido/altar-1")),
             altar_api_key_env=str(altar.get("api_key_env", "BELTU_ALTAR1_API_KEY")),
             altar_api_key_required=bool(altar.get("api_key_required", False)),
