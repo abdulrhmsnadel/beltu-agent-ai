@@ -14,7 +14,22 @@ fi
 "$PYTHON_BIN" -m compileall -q src
 .venv/bin/beltu doctor --strict
 
-tracked_sensitive="$(git ls-files | grep -E '(^|/)(\.env|.*\.env\..*|data/(beltu\.db|runtime/|targets/|evidence/|reports/))' || true)"
+tracked_sensitive="$(
+  git ls-files |
+    while IFS= read -r path; do
+      case "$path" in
+        .env|*/.env|.env.*|*/.env.*)
+          case "$path" in
+            .env.example|*/.env.example) ;;
+            *) printf '%s\n' "$path" ;;
+          esac
+          ;;
+        data/beltu.db|data/runtime/*|data/targets/*|data/evidence/*|data/reports/*)
+          printf '%s\n' "$path"
+          ;;
+      esac
+    done
+)"
 if [[ -n "$tracked_sensitive" ]]; then
   echo "Refusing to release: sensitive/runtime paths are tracked:" >&2
   printf '%s\n' "$tracked_sensitive" >&2
