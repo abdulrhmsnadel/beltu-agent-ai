@@ -1211,14 +1211,20 @@ def status() -> None:
     agent, scans, tasks, _, _, _, _ = build_components()
     all_targets = agent.targets.list_all()
     pending = tasks.list_runnable()
+    config = LLMConfig.from_project(Path.cwd())
+    resource_policy = _resource_policy()
     governor = ResourceGovernor(
-        2, 30, 30, 1, 0.5,
+        int(resource_policy.get("max_concurrent_processes", 2)),
+        float(resource_policy.get("cpu_budget_percent", 30)),
+        float(resource_policy.get("memory_budget_percent", 30)),
+        int(resource_policy.get("min_concurrent_processes", 1)),
+        float(resource_policy.get("poll_interval_seconds", 0.5)),
         freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
-        freetoken_url="http://127.0.0.1:8000",
+        freetoken_url=config.base_url.rsplit("/v1", 1)[0].rstrip("/"),
         altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
         altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
-        altar1_url="http://127.0.0.1:8001",
-        gpu_vram_budget_percent=45,
+        altar1_url=config.altar_base_url.rsplit("/v1", 1)[0].rstrip("/"),
+        gpu_vram_budget_percent=float(resource_policy.get("gpu_vram_budget_percent", 45)),
     )
     snap = governor.snapshot()
     console.print(f"BELTU {__version__} — Agent Core + Multi-Model Brain + Adaptive Execution + Mobile Control")
