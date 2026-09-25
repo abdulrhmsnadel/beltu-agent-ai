@@ -30,17 +30,6 @@ pid_is_freetoken() {
   tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -F -- "$FT_VENV/bin/ft" >/dev/null
 }
 
-kill_group() {
-  local pid="$1"
-  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
-  for _ in {1..150}; do
-    kill -0 "$pid" 2>/dev/null || return 0
-    sleep 0.2
-  done
-  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
-  ! kill -0 "$pid" 2>/dev/null
-}
-
 mkdir -p "$ROOT/data/runtime"
 if [[ -f "$PID_FILE" ]]; then
   OLD_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
