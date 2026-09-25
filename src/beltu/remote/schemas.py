@@ -17,6 +17,10 @@ class LoginResponse(BaseModel):
     scopes: list[str]
 
 
+class ApprovalResolutionRequest(BaseModel):
+    token: str = Field(min_length=8, max_length=256)
+
+
 class ChatMessageRequest(BaseModel):
     conversation_id: str = Field(min_length=1, max_length=128)
     body: str = Field(min_length=1, max_length=4000)
