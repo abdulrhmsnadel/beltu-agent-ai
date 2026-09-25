@@ -357,7 +357,7 @@ class Altar1LocalProvider:
             headers={
                 "Content-Type": "application/json",
                 "Accept": "text/event-stream, application/json",
-                "User-Agent": "BELTU/1.2-local-altar1",
+                "User-Agent": "BELTU/1.3-local-altar1",
             },
         )
         api_key = self.config.altar_api_key()
