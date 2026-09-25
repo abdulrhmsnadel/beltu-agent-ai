@@ -15,11 +15,12 @@ jobs:
       - run: python -m pytest -q
       - run: python -m compileall -q src
       - run: python -m pip check
-      - run: python - <<'PY'
-        import pathlib
-        for script in pathlib.Path('scripts').glob('*.sh'):
-            if script.read_text(encoding='utf-8').startswith('#!'):
-                print(f'checking {script}')
-        PY
+      - run: |
+          python - <<'PY'
+          import pathlib
+          for script in pathlib.Path('scripts').glob('*.sh'):
+              if script.read_text(encoding='utf-8').startswith('#!'):
+                  print(f"checking {script}")
+          PY
       - run: bash -n scripts/*.sh
       - run: beltu doctor --strict
