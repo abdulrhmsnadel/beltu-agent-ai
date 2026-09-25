@@ -1,7 +1,7 @@
 # BELTU Security Model
 
 - Scope is default-deny and checked at registration and immediately before execution.
-- External tools and LLM reasoning are disabled by default.
+- External tools are enabled only when explicitly configured for the deployment; the sample agent configuration may enable bounded low-risk autonomous execution. LLM reasoning remains local by default.
 - Process execution uses argument vectors rather than shell commands.
 - Approval-gated actions require a current approval tied to the decision action hash.
 - Secrets are environment-based; intelligence layers retain metadata/fingerprints rather than raw token values.
