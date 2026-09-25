@@ -117,6 +117,22 @@ def load_agent_config() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def load_resource_config() -> dict:
+    path = Path.cwd() / "config" / "resources.yaml"
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"Invalid config/resources.yaml: {exc}") from exc
+    return data if isinstance(data, dict) else {}
+
+
+def _resource_policy() -> dict:
+    data = load_resource_config().get("resource_policy", {})
+    return data if isinstance(data, dict) else {}
+
+
 def build_components(*, force_heuristic: bool = False):
     db_path, scope_path = paths()
     db = Database(db_path)
@@ -136,6 +152,16 @@ def build_components(*, force_heuristic: bool = False):
     selections = CapabilitySelectionRepository(db)
     events = EventBus()
     llm_config = LLMConfig.from_project(Path.cwd())
+    agent_config = load_agent_config()
+    resource_policy = _resource_policy()
+    cpu_budget = float(resource_policy.get("cpu_budget_percent", 30))
+    memory_budget = float(resource_policy.get("memory_budget_percent", 30))
+    min_processes = int(resource_policy.get("min_concurrent_processes", 1))
+    max_processes = int(resource_policy.get("max_concurrent_processes", 2))
+    poll_interval = float(resource_policy.get("poll_interval_seconds", 0.5))
+    gpu_budget = float(resource_policy.get("gpu_vram_budget_percent", 45))
+    scheduler_cfg = agent_config.get("scheduler", {}) if isinstance(agent_config.get("scheduler", {}), dict) else {}
+    worker_count = max(1, int(scheduler_cfg.get("workers", 4)))
 
     tools = ToolRegistry()
     for adapter in (
@@ -160,17 +186,17 @@ def build_components(*, force_heuristic: bool = False):
         capabilities,
         ProcessManager(),
         ResourceGovernor(
-            max_concurrent_processes=2,
-            cpu_budget_percent=30,
-            memory_budget_percent=30,
-            min_concurrent_processes=1,
-            poll_interval=0.5,
+            max_concurrent_processes=max_processes,
+            cpu_budget_percent=cpu_budget,
+            memory_budget_percent=memory_budget,
+            min_concurrent_processes=min_processes,
+            poll_interval=poll_interval,
             freetoken_pid_file=Path.cwd() / "data" / "runtime" / "freetoken.pid",
             freetoken_url=llm_config.base_url.rsplit("/v1", 1)[0].rstrip("/"),
             altar1_pid_file=Path.cwd() / "data" / "runtime" / "altar1.pid",
             altar1_activity_dir=Path.cwd() / "data" / "runtime" / "altar1.active",
             altar1_url=llm_config.altar_base_url.rsplit("/v1", 1)[0].rstrip("/"),
-            gpu_vram_budget_percent=45,
+            gpu_vram_budget_percent=gpu_budget,
         ),
         observations,
         scans,
@@ -181,7 +207,7 @@ def build_components(*, force_heuristic: bool = False):
     )
     execution_service = ExecutionService(decisions, dispatcher, approvals)
     scheduler = Scheduler(
-        tasks, scans, targets, events, workers=4,
+        tasks, scans, targets, events, workers=worker_count,
         retry_manager=RetryManager(base_delay=0.25, max_delay=5, jitter=0),
     )
 
@@ -219,7 +245,6 @@ def build_components(*, force_heuristic: bool = False):
     scheduler.register("capability.execute", execute_capability)
     orchestrator = Orchestrator(targets, scans, tasks, scheduler, events)
     context_builder = ContextBuilder(scans, targets, observations, hypotheses, AttackSurfaceGraph(), asset_intelligence, surface_intelligence, api_intelligence, auth_intelligence, authorization_intelligence, business_logic_intelligence, finding_intelligence)
-    agent_config = load_agent_config()
     standard_provider = FreeTokenLocalProvider(llm_config) if llm_config.enabled else DisabledLLMProvider()
     altar_provider = Altar1LocalProvider(llm_config) if llm_config.altar_enabled else DisabledLLMProvider()
     gemini_provider = GeminiCloudProvider(llm_config) if llm_config.gemini_enabled else DisabledLLMProvider()
